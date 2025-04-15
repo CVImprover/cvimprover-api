@@ -1,0 +1,19 @@
+# Django framework and core extensions
+Django                          # The Django web framework
+gunicorn                        # Used for Prod and WSGI
+djangorestframework             # REST API framework for Django
+djangorestframework-simplejwt   # JSON Web Token authentication for DRF
+django-filter                   # Filtering support for DRF
+django-allauth                  # User authentication and social login
+dj-rest-auth[with_social]       # Restful API for authentication with social login support
+django-cors-headers             # Handle Cross-Origin Resource Sharing (CORS) in Django
+drf-spectacular                 # OpenAPI 3 schema generation for DRF
+django_extensions               # collection of custom extensions for the Django Framework
+
+# Utility libraries
+python-dotenv                   # Environment variable management
+requests                        # HTTP requests library
+cryptography                    # Encryption and cryptographic tools
+
+# Database and caching
+psycopg2-binary                 # PostgreSQL database adapter for Python
