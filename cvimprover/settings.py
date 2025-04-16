@@ -31,10 +31,6 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
-
-
-# Application definition
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -151,6 +147,41 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
 
 CORS_ALLOW_CREDENTIALS = True
 
+AUTH_USER_MODEL = 'core.User'
+
+# Fetch CORS_ALLOW_CREDENTIALS as a boolean from the environment
+CORS_ALLOW_CREDENTIALS = os.getenv('CORS_ALLOW_CREDENTIALS', 'False').lower() in ['true', '1']
+
+# Fetch URLs from environment variables
+BACKEND_URL = os.getenv('BACKEND_URL', 'localhost:8000')
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'localhost:3000')
+
+# Allowed hosts configuration
+ALLOWED_HOSTS = [
+    'localhost',
+    {BACKEND_URL},
+    f'www.{BACKEND_URL}',  # For `www` subdomain
+    '127.0.0.1'
+]
+
+# CSRF trusted origins
+CSRF_TRUSTED_ORIGINS = [
+    f'http://{FRONTEND_URL}',
+    f'https://{FRONTEND_URL}',
+    f'http://{BACKEND_URL}',
+    f'https://{BACKEND_URL}',
+]
+
+# CORS settings
+CORS_ALLOW_CREDENTIALS = True
+
+# Allowlist of domains that can make CORS requests
+CORS_ORIGIN_WHITELIST = [
+    f'http://{FRONTEND_URL}',
+    f'https://{FRONTEND_URL}'
+]
+
+
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],   
@@ -160,13 +191,17 @@ REST_FRAMEWORK = {
     ],    
 }
 
+REST_AUTH_SERIALIZERS = {
+    'USER_DETAILS_SERIALIZER': 'core.serializers.CustomUserDetailsSerializer',
+}
+
 SPECTACULAR_SETTINGS = {
     'TITLE': 'CVImprover',
     'DESCRIPTION': 'API documentation for CVImprover project',
     'VERSION': '1.0.0',
 }
 
-AUTH_USER_MODEL = 'core.User'
+
 
 SITE_ID = 1
 
