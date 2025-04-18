@@ -3,7 +3,8 @@ from rest_framework import serializers
 from .models import User
 
 class CustomUserDetailsSerializer(UserDetailsSerializer):
-    date_of_birth = serializers.DateField(required=False)
+    email = serializers.EmailField(required=False)
+    date_of_birth = serializers.DateField(required=False, allow_null=True)
 
     class Meta(UserDetailsSerializer.Meta):
         model = User
