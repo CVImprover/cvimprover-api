@@ -161,7 +161,7 @@ FRONTEND_URL = os.getenv('FRONTEND_URL', 'localhost:3000')
 # Allowed hosts configuration
 ALLOWED_HOSTS = [
     'localhost',
-    {BACKEND_URL},
+    BACKEND_URL,
     f'www.{BACKEND_URL}',  # For `www` subdomain
     '127.0.0.1'
 ]
