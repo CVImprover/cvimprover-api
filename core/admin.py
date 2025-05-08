@@ -1,8 +1,9 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.translation import gettext_lazy as _
-from .models import User
+from .models import User, CVQuestionnaire
 
+# Register the custom User model
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     list_display = ('username', 'email', 'first_name', 'last_name', 'is_staff')
@@ -22,3 +23,10 @@ class UserAdmin(BaseUserAdmin):
             'fields': ('username', 'email', 'password1', 'password2'),
         }),
     )
+
+# Register the CVQuestionnaire model
+class CVQuestionnaireAdmin(admin.ModelAdmin):
+    list_display = ['user', 'position', 'industry', 'experience_level', 'company_size', 'application_timeline', 'submitted_at']
+    search_fields = ['user__username', 'position', 'industry']
+
+admin.site.register(CVQuestionnaire, CVQuestionnaireAdmin)

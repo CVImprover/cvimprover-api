@@ -15,11 +15,12 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
+from django.conf import settings
+from django.conf.urls.static import static
 from django.urls import path, include
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework_simplejwt.views import TokenRefreshView
 from core.views import CustomUserDetailsView
-from dj_rest_auth.views import LoginView
 from .views import get_csrf_token
 
 urlpatterns = [
@@ -27,13 +28,16 @@ urlpatterns = [
     path('schema/', SpectacularAPIView.as_view(), name='schema'),
     path('', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
 
-
-    # Registration URLS
+    # Auth
     path('auth/user/', CustomUserDetailsView.as_view(), name='rest_user_details'),    
     path('auth/', include('dj_rest_auth.urls')),
     path('auth/csrf-token/', get_csrf_token, name='csrf_token'),
-    path('auth/login/', LoginView.as_view(), name='rest_login'),
     path('auth/registration/', include('dj_rest_auth.registration.urls')),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
+    # Core API
+    path('cv/', include('core.urls')), 
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
