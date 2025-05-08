@@ -1,6 +1,12 @@
-from dj_rest_auth.serializers import UserDetailsSerializer
 from rest_framework import serializers
-from .models import User
+from .models import CVQuestionnaire, User
+from dj_rest_auth.serializers import UserDetailsSerializer
+
+class CVQuestionnaireSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CVQuestionnaire
+        fields = '__all__'
+        read_only_fields = ['user', 'submitted_at']
 
 class CustomUserDetailsSerializer(UserDetailsSerializer):
     email = serializers.EmailField(required=False)
@@ -8,6 +14,4 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
 
     class Meta(UserDetailsSerializer.Meta):
         model = User
-        fields = UserDetailsSerializer.Meta.fields + (
-            'date_of_birth',
-        )
+        fields = UserDetailsSerializer.Meta.fields + ('date_of_birth',)
