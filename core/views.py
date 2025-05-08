@@ -1,8 +1,8 @@
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from dj_rest_auth.views import UserDetailsView
-from .models import CVQuestionnaire
-from .serializers import CustomUserDetailsSerializer, CVQuestionnaireSerializer
+from .models import CVQuestionnaire, AIResponse
+from .serializers import CustomUserDetailsSerializer, CVQuestionnaireSerializer, AIResponseSerializer
 
 
 class CustomUserDetailsView(UserDetailsView):
@@ -20,3 +20,12 @@ class CVQuestionnaireViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+class AIResponseViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = AIResponse.objects.all()
+    serializer_class = AIResponseSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # Only return the AI response for the current user's questionnaires
+        return self.queryset.filter(questionnaire__user=self.request.user)

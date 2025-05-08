@@ -2,6 +2,9 @@
 
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.utils import timezone
+
+
 
 class User(AbstractUser):
     date_of_birth = models.DateField(blank=True, null=True)
@@ -50,3 +53,23 @@ class CVQuestionnaire(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.position}"
+
+
+
+
+class AIResponse(models.Model):
+    questionnaire = models.OneToOneField(
+        CVQuestionnaire, 
+        related_name='ai_response', 
+        on_delete=models.CASCADE
+    )
+    response_text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        # Convert to local time if needed, remove microseconds, strip timezone
+        created = self.created_at
+        if timezone.is_aware(created):
+            created = timezone.localtime(created)
+        created = created.replace(microsecond=0)
+        return f"Response for {self.questionnaire.position} - {created.strftime('%Y-%m-%d %H:%M:%S')}"

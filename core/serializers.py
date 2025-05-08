@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import CVQuestionnaire, User
 from dj_rest_auth.serializers import UserDetailsSerializer
+from core.models import AIResponse
 
 class CVQuestionnaireSerializer(serializers.ModelSerializer):
     class Meta:
@@ -15,3 +16,10 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
     class Meta(UserDetailsSerializer.Meta):
         model = User
         fields = UserDetailsSerializer.Meta.fields + ('date_of_birth',)
+
+
+
+class AIResponseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AIResponse
+        fields = ['id', 'questionnaire', 'response_text', 'created_at']
