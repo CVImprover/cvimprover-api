@@ -17,3 +17,9 @@ cryptography                    # Encryption and cryptographic tools
 
 # Database and caching
 psycopg2-binary                 # PostgreSQL database adapter for Python
+
+# Celery - glorified crond
+celery
+redis
+django-celery-beat
+eventlet

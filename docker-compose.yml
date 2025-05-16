@@ -12,6 +12,15 @@ x-postgres-common: &postgres-common
     timeout: 5s
     retries: 10
 
+x-redis-common: &redis-common
+  image: redis:alpine
+  restart: always
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+    interval: 10s
+    timeout: 5s
+    retries: 5    
+
 services:
   web:
     container_name: cvimprover_django
@@ -40,6 +49,35 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}      
     volumes:
       - postgres_data:/var/lib/postgresql/data/
+
+  redis:
+    <<: *redis-common
+    container_name: cvimprover_redis
+    ports:
+      - "6379:6379"
+
+  celery:
+    container_name: cvimprover_celery
+    build: .
+    command: >
+      celery -A extratime worker --loglevel=info
+    volumes:
+      - .:/app
+    depends_on:
+      - web
+      - redis
+
+  celery-beat:
+    container_name: cvimprover_celery_beat
+    build: .
+    command: >
+      celery -A extratime beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - .:/app
+    depends_on:
+      - web
+      - redis
+
 
 volumes:
   postgres_data:
