@@ -1,5 +1,3 @@
-# /var/www/html/app/api/cvimprover/celery.py
-
 import os
 from celery import Celery
 
