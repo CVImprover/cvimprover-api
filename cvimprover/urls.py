@@ -31,7 +31,7 @@ urlpatterns = [
     # Auth
     path('auth/user/', CustomUserDetailsView.as_view(), name='rest_user_details'),    
     path('auth/', include('dj_rest_auth.urls')),
-    path('auth/csrf_token_view/', get_csrf_token, name='csrf_token'),
+    path('auth/csrf-token/', csrf_token_view, name='csrf_token'),
     path('auth/registration/', include('dj_rest_auth.registration.urls')),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
