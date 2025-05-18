@@ -21,7 +21,7 @@ from django.urls import path, include
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework_simplejwt.views import TokenRefreshView
 from core.views import CustomUserDetailsView
-from .views import get_csrf_token
+from .views import csrf_token_view
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -31,7 +31,7 @@ urlpatterns = [
     # Auth
     path('auth/user/', CustomUserDetailsView.as_view(), name='rest_user_details'),    
     path('auth/', include('dj_rest_auth.urls')),
-    path('auth/csrf-token/', get_csrf_token, name='csrf_token'),
+    path('auth/csrf_token_view/', get_csrf_token, name='csrf_token'),
     path('auth/registration/', include('dj_rest_auth.registration.urls')),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
