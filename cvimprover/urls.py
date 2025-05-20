@@ -36,7 +36,8 @@ urlpatterns = [
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
     # Core API
-    path('cv/', include('core.urls')), 
+    path('cv/', include('cv.urls')), 
+    path('', include('core.urls')), 
 ]
 
 if settings.DEBUG:
