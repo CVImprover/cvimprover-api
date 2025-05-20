@@ -60,7 +60,7 @@ services:
     container_name: cvimprover_celery
     build: .
     command: >
-      celery -A extratime worker --loglevel=info
+      celery -A cvimprover worker --loglevel=info
     volumes:
       - .:/app
     depends_on:
@@ -71,7 +71,7 @@ services:
     container_name: cvimprover_celery_beat
     build: .
     command: >
-      celery -A extratime beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+      celery -A cvimprover beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     volumes:
       - .:/app
     depends_on:
