@@ -20,6 +20,13 @@ psycopg2-binary                 # PostgreSQL database adapter for Python
 
 # Celery - glorified crond
 celery
-redis
+
 django-celery-beat
 eventlet
+
+# Payments
+stripe
+
+# Caches
+redis
+django-redis

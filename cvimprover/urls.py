@@ -25,8 +25,6 @@ from .views import csrf_token_view
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('schema/', SpectacularAPIView.as_view(), name='schema'),
-    path('', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
 
     # Auth
     path('auth/user/', CustomUserDetailsView.as_view(), name='rest_user_details'),    
@@ -37,7 +35,10 @@ urlpatterns = [
 
     # Core API
     path('cv/', include('cv.urls')), 
-    path('', include('core.urls')), 
+    path('core/', include('core.urls')), 
+
+    path('schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),    
 ]
 
 if settings.DEBUG:
