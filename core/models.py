@@ -7,7 +7,6 @@ class User(AbstractUser):
     plan = models.ForeignKey('Plan', on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
     stripe_subscription_id = models.CharField(max_length=255, blank=True, null=True)
     stripe_subscription_status = models.CharField(max_length=50, blank=True, null=True)
-    subscription_renewal_date = models.DateTimeField(null=True, blank=True)
     stripe_customer_id = models.CharField(max_length=255, blank=True, null=True)
 
 

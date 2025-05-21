@@ -143,11 +143,16 @@ class StripeWebhookView(APIView):
                     user.plan = plan
 
                 if subscription_id:
-                    user.stripe_subscription_id = subscription_id
-                    user.stripe_subscription_status = "active"
-                    current_period_end = subscription.get("current_period_end")
-                    if current_period_end:
-                        user.subscription_renewal_date = datetime.fromtimestamp(current_period_end, tz=timezone.utc)             
+                    try:
+                        subscription = stripe.Subscription.retrieve(subscription_id)
+                        user.stripe_subscription_id = subscription_id
+                        user.stripe_subscription_status = "active"
+
+                        current_period_end = subscription.get("current_period_end")
+                        if current_period_end:
+                            user.subscription_renewal_date = datetime.fromtimestamp(current_period_end, tz=timezone.utc)
+                    except Exception as sub_err:
+                        logger.error(f"❌ Failed to retrieve subscription {subscription_id}: {sub_err}")   
 
                 if customer_id:
                     user.stripe_customer_id = customer_id                            
