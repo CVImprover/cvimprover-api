@@ -12,8 +12,12 @@ from django.http import JsonResponse, HttpResponse
 from django.contrib.auth import get_user_model
 from .serializers import CustomUserDetailsSerializer, PlanSerializer
 from .models import Plan
-
+from datetime import datetime
+from django.utils import timezone
 import stripe
+import logging
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -85,6 +89,9 @@ class CreateCheckoutSessionView(APIView):
                 success_url=f'{FRONTEND_URL}/payments/success?session_id={{CHECKOUT_SESSION_ID}}',
                 cancel_url=f'{FRONTEND_URL}/payments/cancelled',
                 customer_email=request.user.email,
+                metadata={
+                    'plan_id': str(plan.id),
+                }
             )
 
             return Response({'url': session.url})
@@ -119,20 +126,31 @@ class StripeWebhookView(APIView):
             session = event["data"]["object"]
             email = session.get("customer_email")
             subscription_id = session.get("subscription")
+            customer_id = session.get("customer")
             plan_id = session.get("metadata", {}).get("plan_id")
+            
 
             try:
                 user = User.objects.get(email=email)
+
                 if plan_id:
                     plan = Plan.objects.get(id=plan_id)
                     user.plan = plan
+
                 if subscription_id:
                     user.stripe_subscription_id = subscription_id
                     user.stripe_subscription_status = "active"
+                    current_period_end = subscription.get("current_period_end")
+                    if current_period_end:
+                        user.subscription_renewal_date = datetime.fromtimestamp(current_period_end, tz=timezone.utc)             
+
+                if customer_id:
+                    user.stripe_customer_id = customer_id                            
+
                 user.save()
-                print(f"✅ Updated user {user.email} to plan {user.plan} with subscription {subscription_id}")
+                logger.info(f"✅ Updated user {user.email} to plan {user.plan} with subscription {subscription_id}")
             except Exception as e:
-                print(f"❌ Failed to update user after checkout: {e}")
+                logger.error(f"❌ Failed to update user after checkout: {e}")
 
         elif event_type == "customer.subscription.deleted":
             subscription = event["data"]["object"]
@@ -140,31 +158,25 @@ class StripeWebhookView(APIView):
 
             try:
                 user = User.objects.get(stripe_subscription_id=subscription_id)
-                user.plan = Plan.objects.get(name="Free")  # downgrade to Free
+                user.plan = Plan.objects.get(name="Free")
                 user.stripe_subscription_status = "canceled"
                 user.save()
-                print(f"⚠️ Subscription {subscription_id} canceled. Downgraded user {user.email} to Free.")
+                logger.info(f"⚠️ Subscription {subscription_id} canceled. Downgraded user {user.email} to Free.")
             except Exception as e:
-                print(f"❌ Failed to handle subscription cancellation: {e}")
+                logger.error(f"❌ Failed to handle subscription cancellation: {e}")
 
         elif event_type == "customer.subscription.updated":
             subscription = event["data"]["object"]
             subscription_id = subscription["id"]
-            status = subscription["status"]  # e.g. active, past_due, canceled, trialing
+            status = subscription["status"]
 
             try:
                 user = User.objects.get(stripe_subscription_id=subscription_id)
                 user.stripe_subscription_status = status
 
-                # Optional: store billing dates
                 current_period_end = subscription.get("current_period_end")
-                current_period_start = subscription.get("current_period_start")
-
-                # Optionally store billing dates as DateTimeFields in your User model
-                # Convert from Unix timestamp if needed
-                # Example:
-                # user.billing_period_start = datetime.fromtimestamp(current_period_start, tz=timezone.utc)
-                # user.billing_period_end = datetime.fromtimestamp(current_period_end, tz=timezone.utc)
+                if current_period_end:
+                    user.subscription_renewal_date = datetime.fromtimestamp(current_period_end, tz=timezone.utc)
 
                 # Optional: update plan if changed
                 price_id = subscription["items"]["data"][0]["price"]["id"]
@@ -176,11 +188,10 @@ class StripeWebhookView(APIView):
 
                 if plan:
                     user.plan = plan
-
                 user.save()
-                print(f"🔄 Synced subscription update for {user.email} – {status}")
+                logger.info(f"🔄 Synced subscription update for {user.email} – {status}")
             except User.DoesNotExist:
-                print(f"❌ No user found with subscription ID {subscription_id}")               
+                logger.error(f"❌ No user found with subscription ID {subscription_id}")               
 
         return HttpResponse(status=200)
     
@@ -238,3 +249,20 @@ class PlanListView(ListAPIView):
             queryset = queryset.exclude(stripe_price_id_yearly__isnull=True).exclude(stripe_price_id_yearly='')
 
         return queryset    
+    
+class CreateBillingPortalSessionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        if not user.stripe_customer_id:
+            return Response({"error": "No Stripe customer ID found."}, status=400)
+
+        try:
+            session = stripe.billing_portal.Session.create(
+                customer=user.stripe_customer_id,
+                return_url=f"https://{settings.FRONTEND_URL}/profile"
+            )
+            return Response({"url": session.url})
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)    

@@ -59,7 +59,9 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
     date_of_birth = serializers.DateField(required=False, allow_null=True)
     plan = PlanSerializer(read_only=True)
     stripe_subscription_id = serializers.CharField(read_only=True)
+    stripe_customer_id = serializers.CharField(read_only=True)
     stripe_subscription_status = serializers.CharField(read_only=True)
+    subscription_renewal_date = serializers.DateTimeField(read_only=True)
 
     class Meta(UserDetailsSerializer.Meta):
         model = User
@@ -68,4 +70,6 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             'plan',
             'stripe_subscription_id',
             'stripe_subscription_status',
+            'stripe_customer_id',
+            'subscription_renewal_date',
         )
