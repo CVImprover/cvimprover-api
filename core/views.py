@@ -6,13 +6,14 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.response import Response
 from rest_framework import status
-from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiParameter
+from drf_spectacular.utils import extend_schema, OpenApiExample
 from django.conf import settings
 from django.http import JsonResponse, HttpResponse
 from django.contrib.auth import get_user_model
 from .serializers import CustomUserDetailsSerializer, PlanSerializer
 from .models import Plan
-
+from dj_rest_auth.registration.views import SocialLoginView
+from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 import stripe
 
 User = get_user_model()
@@ -20,6 +21,9 @@ User = get_user_model()
 class CustomUserDetailsView(UserDetailsView):
     serializer_class = CustomUserDetailsSerializer
     permission_classes = [IsAuthenticated]
+
+class GoogleLogin(SocialLoginView):
+    adapter_class = GoogleOAuth2Adapter
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 FRONTEND_URL = settings.FRONTEND_URL
