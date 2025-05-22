@@ -38,6 +38,7 @@ urlpatterns = [
     path('core/', include('core.urls')), 
 
     # social auth
+    path('accounts/', include('allauth.urls')),
     path('auth/social/login/google/', GoogleLogin.as_view(), name='google_login'),
 
     path('schema/', SpectacularAPIView.as_view(), name='schema'),
