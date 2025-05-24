@@ -66,6 +66,7 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
     stripe_customer_id = serializers.CharField(read_only=True)
     stripe_subscription_status = serializers.CharField(read_only=True)
     subscription_renewal_date = serializers.SerializerMethodField()
+    subscription_interval = serializers.SerializerMethodField()    
 
     class Meta(UserDetailsSerializer.Meta):
         model = User
@@ -76,27 +77,41 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             'stripe_subscription_status',
             'stripe_customer_id',
             'subscription_renewal_date',
+            'subscription_interval',            
         )
 
-    def get_subscription_renewal_date(self, obj):
+    def _get_subscription_info(self, obj):
         if not obj.stripe_subscription_id:
             return None
 
-        cache_key = f"stripe_subscription_end_{obj.stripe_subscription_id}"
-        cached_date = cache.get(cache_key)
-        if cached_date:
-            return cached_date
+        cache_key = f"stripe_subscription_info_{obj.stripe_subscription_id}"
+        cached_info = cache.get(cache_key)
+        if cached_info:
+            return cached_info
 
         try:
             subscription = stripe.Subscription.retrieve(obj.stripe_subscription_id)
+            item = subscription["items"]["data"][0]
 
+            current_period_end = item["current_period_end"]
+            interval = item["price"]["recurring"]["interval"]
 
-            current_period_end = subscription["items"]["data"][0]["current_period_end"]
-            print(f"🔍 Stripe subscription data: {current_period_end}")
-            if current_period_end:
-                dt = datetime.fromtimestamp(current_period_end)
-                cache.set(cache_key, dt, timeout=60 * 120)
-                return dt
+            dt = datetime.fromtimestamp(current_period_end)
+            info = {
+                "renewal_date": dt,
+                "interval": interval
+            }
+
+            cache.set(cache_key, info, timeout=60 * 120)
+            return info
         except Exception as e:
-            logger.error(f"❌ Error fetching renewal date: {e}")
-            return None
+            logger.error(f"❌ Error fetching subscription info: {e}")
+            return None        
+
+    def get_subscription_renewal_date(self, obj):
+        info = self._get_subscription_info(obj)
+        return info["renewal_date"] if info else None
+
+    def get_subscription_interval(self, obj):
+        info = self._get_subscription_info(obj)
+        return info["interval"] if info else None
