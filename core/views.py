@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.response import Response
 from rest_framework import status
-from drf_spectacular.utils import extend_schema, OpenApiExample
+from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiParameter
 from django.conf import settings
 from django.http import JsonResponse, HttpResponse
 from django.contrib.auth import get_user_model
@@ -14,6 +14,7 @@ from .serializers import CustomUserDetailsSerializer, PlanSerializer
 from .models import Plan
 from datetime import datetime
 from django.utils import timezone
+from django.core.cache import cache
 from dj_rest_auth.registration.views import SocialLoginView
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 
@@ -188,7 +189,6 @@ class StripeWebhookView(APIView):
                 if current_period_end:
                     user.subscription_renewal_date = datetime.fromtimestamp(current_period_end, tz=timezone.utc)
 
-                # Optional: update plan if changed
                 price_id = subscription["items"]["data"][0]["price"]["id"]
                 plan = Plan.objects.filter(
                     stripe_price_id_monthly=price_id
@@ -276,3 +276,105 @@ class CreateBillingPortalSessionView(APIView):
             return Response({"url": session.url})
         except Exception as e:
             return Response({"error": str(e)}, status=500)    
+        
+
+class VerifyCheckoutSessionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(name="session_id", required=True, type=str, location=OpenApiParameter.QUERY)
+        ],
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean'},
+                    'subscription': {
+                        'type': 'object',
+                        'properties': {
+                            'id': {'type': 'integer'},
+                            'plan_name': {'type': 'string'},
+                            'status': {'type': 'string'},
+                            'current_period_start': {'type': 'string', 'format': 'date-time'},
+                            'current_period_end': {'type': 'string', 'format': 'date-time'},
+                        }
+                    }
+                }
+            },
+            400: {'type': 'object', 'properties': {'error': {'type': 'string'}}},
+            500: {'type': 'object', 'properties': {'error': {'type': 'string'}}},
+        },
+        examples=[
+            OpenApiExample(
+                name="Valid session verification",
+                value={"session_id": "cs_test_ABC123"},
+                request_only=True
+            )
+        ]
+    )
+    def get(self, request):
+        session_id = request.query_params.get("session_id")
+        if not session_id:
+            return Response({"error": "Missing session_id"}, status=status.HTTP_400_BAD_REQUEST)
+
+        cache_key = f"stripe_verified_session_{session_id}"
+        cached = cache.get(cache_key)
+        if cached:
+            return Response(cached)
+
+        try:
+            session = stripe.checkout.Session.retrieve(
+                session_id,
+                expand=["subscription"]
+            )
+            subscription = session.get("subscription")
+            items = subscription.get("items", {}).get("data", [])
+            print(f"subscription: {subscription}")
+            if not subscription:
+                return Response({"error": "No subscription found in session."}, status=status.HTTP_400_BAD_REQUEST)
+
+            if not items:
+                return Response({"error": "Subscription items missing."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            user = request.user
+            sub_id = subscription["id"]
+            status_str = subscription["status"]
+            item = items[0]
+            period_start_ts = item.get("current_period_start")
+            period_end_ts = item.get("current_period_end")
+            if not period_start_ts or not period_end_ts:
+                return Response({"error": "Subscription period not available yet."}, status=status.HTTP_400_BAD_REQUEST)
+
+            period_start = datetime.fromtimestamp(period_start_ts).isoformat()
+            period_end = datetime.fromtimestamp(period_end_ts).isoformat()            
+            plan_id = session["metadata"].get("plan_id")
+
+            plan = None
+            if plan_id:
+                try:
+                    plan = Plan.objects.get(id=plan_id)
+                    user.plan = plan
+                except Plan.DoesNotExist:
+                    logger.warning(f"⚠️ Plan with ID {plan_id} not found.")
+            user.stripe_subscription_id = sub_id
+            user.stripe_subscription_status = status_str
+            user.save()
+
+            response_data = {
+                "success": True,
+                "subscription": {
+                    "id": plan.id if plan else None,
+                    "plan_name": plan.name if plan else "Unknown",
+                    "status": status_str,
+                    "current_period_start": period_start,
+                    "current_period_end": period_end
+                }
+            }
+
+            cache.set(cache_key, response_data, timeout=60 * 60)  # 1 hour
+            return Response(response_data)
+
+        except Exception as e:
+            logger.error(f"❌ Error verifying Stripe session {session_id}: {e}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
