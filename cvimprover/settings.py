@@ -178,6 +178,11 @@ CSRF_TRUSTED_ORIGINS = [
     f'https://{BACKEND_URL}',
 ]
 
+# Allow Vercel preview domains
+CORS_ORIGIN_REGEX_WHITELIST = [
+    r"^https:\/\/cvimprover.*\.vercel\.app$"
+]
+
 # CORS settings
 CORS_ALLOW_CREDENTIALS = True
 
