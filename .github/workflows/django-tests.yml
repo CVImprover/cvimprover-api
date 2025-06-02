@@ -53,6 +53,7 @@ jobs:
 
       - name: Run migrations
         env:
+          CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
           DB_NAME: test_db
           DB_USER: cvvuser
           DB_PASSWORD: cvvpassword
@@ -64,6 +65,7 @@ jobs:
 
       - name: Run tests
         env:
+          CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
           DB_NAME: test_db
           DB_USER: cvvuser
           DB_PASSWORD: cvvpassword
