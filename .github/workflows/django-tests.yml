@@ -1,0 +1,73 @@
+name: Django CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '**/*.py'                # Trigger when Python files change
+      - '**/*.js'                # Trigger when JavaScript files change
+      - '**/*.html'              # Trigger when HTML files change
+      - 'requirements.txt'       # Trigger when dependencies change
+      - 'extratime/settings.py'  # Trigger when settings change
+      - 'migrations/**'          # Trigger when there are database migrations
+      - 'ecosystem.config.js'    
+
+jobs:
+  run_tests_on_code_changes:
+    name: Run Tests on changes.
+    runs-on: ubuntu-latest
+
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cvvuser
+          POSTGRES_PASSWORD: cvvpassword
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Wait for PostgreSQL
+        run: sleep 10
+
+      - name: Run migrations
+        env:
+          DB_NAME: test_db
+          DB_USER: cvvuser
+          DB_PASSWORD: cvvpassword
+          DB_HOST: localhost
+          DB_PORT: 5432
+          SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+        run: |
+          python manage.py migrate
+
+      - name: Run tests
+        env:
+          DB_NAME: test_db
+          DB_USER: cvvuser
+          DB_PASSWORD: cvvpassword
+          DB_HOST: localhost
+          DB_PORT: 5432
+          SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+        run: |
+          python manage.py test
