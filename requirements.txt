@@ -14,6 +14,7 @@ django_extensions               # collection of custom extensions for the Django
 python-dotenv                   # Environment variable management
 requests                        # HTTP requests library
 cryptography                    # Encryption and cryptographic tools
+openai
 
 # Database and caching
 psycopg2-binary                 # PostgreSQL database adapter for Python
