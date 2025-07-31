@@ -41,7 +41,8 @@ class CVQuestionnaire(models.Model):
 
 
 class AIResponse(models.Model):
-    questionnaire = models.OneToOneField(
+    # model was OneToOneField
+    questionnaire = models.ForeignKey(
         CVQuestionnaire, 
         related_name='ai_response', 
         on_delete=models.CASCADE
