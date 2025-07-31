@@ -23,6 +23,8 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from core.views import CustomUserDetailsView, GoogleLogin
 from .views import csrf_token_view
 
+from .views import test_openai
+
 urlpatterns = [
     path('admin/', admin.site.urls),
 
@@ -43,6 +45,9 @@ urlpatterns = [
 
     path('schema/', SpectacularAPIView.as_view(), name='schema'),
     path('', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),    
+
+    # OpenAI test endpoint
+    path('openai/test/', test_openai, name='test_openai'),
 
 ]
 
