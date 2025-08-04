@@ -1,4 +1,8 @@
 from rest_framework import viewsets, status, mixins
+from rest_framework.decorators import action
+import markdown2
+from weasyprint import HTML
+from django.core.files.base import ContentFile
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import CVQuestionnaire, AIResponse
@@ -27,6 +31,31 @@ class AIResponseViewSet(mixins.ListModelMixin,
                         mixins.RetrieveModelMixin,
                         mixins.CreateModelMixin,
                         viewsets.GenericViewSet):
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path='generate-pdf',
+        url_name='generate-pdf',
+        description='Generate a PDF from the AI response and update the questionnaire resume. Returns the PDF URL.'
+    )
+    def generate_pdf(self, request, pk=None):
+        """
+        Generate a PDF from the AI response and update the questionnaire resume. Returns the PDF URL.
+        """
+        ai_response = self.get_object()
+        questionnaire = ai_response.questionnaire
+        # Convert markdown to HTML
+        html_content = markdown2.markdown(ai_response.response_text)
+        # Generate PDF from HTML
+        pdf_file = HTML(string=html_content).write_pdf()
+        # Save PDF to the questionnaire's resume field
+        filename = f"ai_cv_{questionnaire.id}.pdf"
+        questionnaire.resume.save(filename, ContentFile(pdf_file), save=True)
+        return Response({
+            'pdf_url': questionnaire.resume.url
+        })
+    
     queryset = AIResponse.objects.all()
     serializer_class = AIResponseSerializer
     permission_classes = [IsAuthenticated]
