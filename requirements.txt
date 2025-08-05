@@ -16,6 +16,8 @@ requests                        # HTTP requests library
 cryptography                    # Encryption and cryptographic tools
 openai
 PyPDF2
+markdown2
+weasyprint
 
 
 # Database and caching

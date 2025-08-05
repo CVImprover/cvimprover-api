@@ -10,6 +10,8 @@ class CVQuestionnaireSerializer(serializers.ModelSerializer):
 
 
 class AIResponseSerializer(serializers.ModelSerializer):
+    prompt = serializers.CharField(write_only=True, required=True, help_text="Prompt to send to the AI model.")
+
     class Meta:
         model = AIResponse
-        fields = ['id', 'questionnaire', 'response_text', 'created_at']
+        fields = ['id', 'questionnaire', 'created_at', 'prompt', 'response_text']
