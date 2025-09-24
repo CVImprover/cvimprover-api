@@ -1,6 +1,6 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
-
+from .validators import validate_email_with_suggestions
 
 class User(AbstractUser):
     date_of_birth = models.DateField(blank=True, null=True)
@@ -8,6 +8,8 @@ class User(AbstractUser):
     stripe_subscription_id = models.CharField(max_length=255, blank=True, null=True)
     stripe_subscription_status = models.CharField(max_length=50, blank=True, null=True)
     stripe_customer_id = models.CharField(max_length=255, blank=True, null=True)
+    email = models.EmailField('email address', blank=False, null=False, unique=True, validators=[validate_email_with_suggestions])
+
 
 
     class Meta:

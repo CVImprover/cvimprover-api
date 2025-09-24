@@ -208,6 +208,7 @@ REST_FRAMEWORK = {
 
 REST_AUTH_SERIALIZERS = {
     'USER_DETAILS_SERIALIZER': 'core.serializers.CustomUserDetailsSerializer',
+    'REGISTER_SERIALIZER': 'core.serializers.CustomRegisterSerializer',
 }
 
 SPECTACULAR_SETTINGS = {

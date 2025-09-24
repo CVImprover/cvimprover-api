@@ -1,13 +1,15 @@
 from rest_framework import serializers
 from .models import User, Plan
 from dj_rest_auth.serializers import UserDetailsSerializer
+from .validators import validate_email_with_suggestions
+from django.core.exceptions import ValidationError as DjangoValidationError
+from dj_rest_auth.registration.serializers import RegisterSerializer
 from django.conf import settings
 from django.core.cache import cache
 from datetime import datetime
 
 import stripe
 stripe.api_key = settings.STRIPE_SECRET_KEY
-
 
 class PlanSerializer(serializers.ModelSerializer):
     monthly_price = serializers.SerializerMethodField()
@@ -115,3 +117,26 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
     def get_subscription_interval(self, obj):
         info = self._get_subscription_info(obj)
         return info["interval"] if info else None
+    
+    def validate_email(self, value):
+        """Enhanced email validation with typo detection and disposable email blocking."""
+        if value:
+            try:
+                # Use our enhanced email validator
+                validated_email = validate_email_with_suggestions(value)
+                
+                # Check if email already exists for other users (excluding current user if updating)
+                if self.instance:
+                    # Updating existing user - exclude current user from uniqueness check
+                    if User.objects.filter(email=value).exclude(pk=self.instance.pk).exists():
+                        raise serializers.ValidationError("A user with this email address already exists.")
+                else:
+                    # Creating new user - check if email exists
+                    if User.objects.filter(email=value).exists():
+                        raise serializers.ValidationError("A user with this email address already exists.")
+                
+                return validated_email
+            except DjangoValidationError as e:
+                # Convert Django ValidationError to DRF ValidationError
+                raise serializers.ValidationError(str(e))
+        return value
