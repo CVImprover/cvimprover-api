@@ -17,6 +17,10 @@ from django.utils import timezone
 from django.core.cache import cache
 from dj_rest_auth.registration.views import SocialLoginView
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
+from django.db import connection
+from redis import Redis
+from openai import OpenAI
+import os
 
 import stripe
 import logging
@@ -378,3 +382,108 @@ class VerifyCheckoutSessionView(APIView):
         except Exception as e:
             logger.error(f"❌ Error verifying Stripe session {session_id}: {e}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(
+    responses={
+        200: {
+            'type': 'object',
+            'properties': {
+                'overall': {'type': 'string'},
+                'services': {
+                    'type': 'object',
+                    'properties': {
+                        'db': {'type': 'string'},
+                        'redis': {'type': 'string'},
+                        'openai': {'type': 'string'},
+                    }
+                }
+            }
+        },
+        503: {
+            'type': 'object',
+            'properties': {
+                'overall': {'type': 'string'},
+                'services': {
+                    'type': 'object',
+                    'properties': {
+                        'db': {'type': 'string'},
+                        'redis': {'type': 'string'},
+                        'openai': {'type': 'string'},
+                    }
+                }
+            }
+        },
+    },
+    examples=[
+        OpenApiExample(
+            name="Healthy services",
+            value={
+                "overall": "healthy",
+                "services": {
+                    "db": "healthy",
+                    "redis": "healthy",
+                    "openai": "healthy"
+                }
+            },
+            response_only=True
+        ),
+        OpenApiExample(
+            name="OpenAI skipped",
+            value={
+                "overall": "healthy",
+                "services": {
+                    "db": "healthy",
+                    "redis": "healthy",
+                    "openai": "skipped"
+                }
+            },
+            response_only=True
+        )
+    ]
+)
+class HealthCheckView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        services = {}
+
+        # Check DB
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+            services['db'] = 'healthy'
+        except Exception as e:
+            logger.error(f"DB health check failed: {e}")
+            services['db'] = 'unhealthy'
+
+        # Check Redis
+        try:
+            redis_client = Redis.from_url(settings.CACHE_URL)
+            redis_client.ping()
+            services['redis'] = 'healthy'
+        except Exception as e:
+            logger.error(f"Redis health check failed: {e}")
+            services['redis'] = 'unhealthy'
+
+        # Check OpenAI (optional)
+        api_key = os.getenv("OPENAI_API_KEY")
+        if api_key:
+            try:
+                client = OpenAI(api_key=api_key)
+                client.models.list()  # Lightweight check
+                services['openai'] = 'healthy'
+            except Exception as e:
+                logger.error(f"OpenAI health check failed: {e}")
+                services['openai'] = 'unhealthy'
+        else:
+            services['openai'] = 'skipped'
+
+        # Determine overall status
+        overall = 'healthy' if services['db'] == 'healthy' and services['redis'] == 'healthy' else 'unhealthy'
+        http_status = status.HTTP_200_OK if overall == 'healthy' else status.HTTP_503_SERVICE_UNAVAILABLE
+
+        return Response({
+            'overall': overall,
+            'services': services
+        }, status=http_status)
