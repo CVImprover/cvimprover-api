@@ -806,3 +806,23 @@ class InputSanitizationTest(APITestCase):
             ai_response.clean()
         
         self.assertIn('response text must be less than 10000 characters', str(context.exception))
+
+    def test_api_calls_model_validation(self):
+        """
+        test that api calls actually trigger model-level validation
+        """
+        url = reverse('questionnaire-list')
+        data = {
+            'position': 'x' * 256,
+            'industry': 'Tech',
+            'experience_level': '3-5',
+            'company_size': 'medium',
+            'location': 'Remote',
+            'application_timeline': '1-3 months',
+            'job_description': 'develop applications'
+        }
+        response = self.client.post(url, data, format='json')
+        
+        # should fail due to model-level validation
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('position must be less than 255 characters', str(response.data))
