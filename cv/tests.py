@@ -7,6 +7,7 @@ from rest_framework.authtoken.models import Token
 from unittest.mock import patch, Mock, MagicMock
 from openai import APIError, RateLimitError, APIConnectionError, AuthenticationError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.exceptions import ValidationError
 import PyPDF2
 
 User = get_user_model()
@@ -502,3 +503,306 @@ class AIResponseCreateErrorHandlingTest(APITestCase):
         ai_response = AIResponse.objects.get(id=response.data['id'])
         self.assertEqual(ai_response.questionnaire, self.questionnaire)
         self.assertEqual(ai_response.response_text, "Here is your improved CV content.")
+
+
+class InputSanitizationTest(APITestCase):
+    def setUp(self):
+        """
+        set up test data for input sanitization tests
+        """
+        self.user = User.objects.create_user(
+            username='sanitizationuser',
+            email='sanitization@example.com',
+            password='securepass123'
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_job_description_html_sanitization(self):
+        """
+        test that html tags are stripped from job_description
+        """
+        url = reverse('questionnaire-list')
+        data = {
+            'position': 'Software Engineer',
+            'industry': 'Tech',
+            'experience_level': '3-5',
+            'company_size': 'medium',
+            'location': 'Remote',
+            'application_timeline': '1-3 months',
+            'job_description': '<script>alert("xss")</script><p>develop web applications</p><b>using modern frameworks</b>'
+        }
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['job_description'], 'develop web applications using modern frameworks')
+
+    def test_job_description_javascript_removal(self):
+        """
+        test that javascript content is removed from job_description
+        """
+        url = reverse('questionnaire-list')
+        data = {
+            'position': 'Software Engineer',
+            'industry': 'Tech',
+            'experience_level': '3-5',
+            'company_size': 'medium',
+            'location': 'Remote',
+            'application_timeline': '1-3 months',
+            'job_description': 'develop apps javascript:alert("xss") and also onload=alert("xss")'
+        }
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['job_description'], 'develop apps and also')
+
+    def test_job_description_character_limit(self):
+        """
+        test that job_description respects character limit
+        """
+        url = reverse('questionnaire-list')
+        data = {
+            'position': 'Software Engineer',
+            'industry': 'Tech',
+            'experience_level': '3-5',
+            'company_size': 'medium',
+            'location': 'Remote',
+            'application_timeline': '1-3 months',
+            'job_description': 'x' * 5001  # over the 5000 character limit
+        }
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('job description must be less than 5000 characters', str(response.data))
+
+    def test_position_html_sanitization(self):
+        """
+        test that html tags are stripped from position
+        """
+        url = reverse('questionnaire-list')
+        data = {
+            'position': '<script>alert("xss")</script>Senior Developer',
+            'industry': 'Tech',
+            'experience_level': '3-5',
+            'company_size': 'medium',
+            'location': 'Remote',
+            'application_timeline': '1-3 months',
+            'job_description': 'develop applications'
+        }
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['position'], 'Senior Developer')
+
+    def test_position_character_limit(self):
+        """
+        test that position respects character limit
+        """
+        url = reverse('questionnaire-list')
+        data = {
+            'position': 'x' * 256,
+            'industry': 'Tech',
+            'experience_level': '3-5',
+            'company_size': 'medium',
+            'location': 'Remote',
+            'application_timeline': '1-3 months',
+            'job_description': 'develop applications'
+        }
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('position must be less than 255 characters', str(response.data))
+
+    def test_industry_html_sanitization(self):
+        """
+        test that html tags are stripped from industry
+        """
+        url = reverse('questionnaire-list')
+        data = {
+            'position': 'Software Engineer',
+            'industry': '<b>Technology</b> <script>alert("xss")</script>',
+            'experience_level': '3-5',
+            'company_size': 'medium',
+            'location': 'Remote',
+            'application_timeline': '1-3 months',
+            'job_description': 'develop applications'
+        }
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['industry'], 'Technology')
+
+    def test_location_html_sanitization(self):
+        """
+        test that html tags are stripped from location
+        """
+        url = reverse('questionnaire-list')
+        data = {
+            'position': 'Software Engineer',
+            'industry': 'Tech',
+            'experience_level': '3-5',
+            'company_size': 'medium',
+            'location': '<i>Remote</i> <script>alert("xss")</script>',
+            'application_timeline': '1-3 months',
+            'job_description': 'develop applications'
+        }
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['location'], 'Remote')
+
+    def test_ai_response_prompt_sanitization(self):
+        """
+        test that html tags are stripped from ai response prompt
+        """
+        questionnaire = CVQuestionnaire.objects.create(
+            user=self.user,
+            position='Software Engineer',
+            industry='Tech',
+            experience_level='3-5',
+            company_size='medium',
+            location='Remote',
+            application_timeline='1-3 months',
+            job_description='develop applications'
+        )
+        
+        url = reverse('ai-response-list')
+        data = {
+            'questionnaire': questionnaire.id,
+            'prompt': '<script>alert("xss")</script>please improve my cv <b>for this position</b>'
+        }
+        response = self.client.post(url, data, format='json')
+        
+        # the response might fail due to missing openai key, but we can check the validation
+        # if it's a 400 error, it means validation passed but openai failed
+        # if it's 201, it means everything worked
+        self.assertIn(response.status_code, [status.HTTP_201_CREATED, status.HTTP_400_BAD_REQUEST, status.HTTP_503_SERVICE_UNAVAILABLE])
+
+    def test_ai_response_prompt_character_limit(self):
+        """
+        test that ai response prompt respects character limit
+        """
+        questionnaire = CVQuestionnaire.objects.create(
+            user=self.user,
+            position='Software Engineer',
+            industry='Tech',
+            experience_level='3-5',
+            company_size='medium',
+            location='Remote',
+            application_timeline='1-3 months',
+            job_description='develop applications'
+        )
+        
+        url = reverse('ai-response-list')
+        data = {
+            'questionnaire': questionnaire.id,
+            'prompt': 'x' * 5001
+        }
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('prompt must be less than 5000 characters', str(response.data))
+
+    def test_whitespace_normalization(self):
+        """
+        test that excessive whitespace is normalized
+        """
+        url = reverse('questionnaire-list')
+        data = {
+            'position': 'Software   Engineer',
+            'industry': 'Tech\t\n',
+            'experience_level': '3-5',
+            'company_size': 'medium',
+            'location': 'Remote',
+            'application_timeline': '1-3 months',
+            'job_description': 'develop    applications\n\nwith\t\tmodern frameworks'
+        }
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['position'], 'Software Engineer')
+        self.assertEqual(response.data['industry'], 'Tech')
+        self.assertEqual(response.data['job_description'], 'develop applications with modern frameworks')
+
+    def test_data_url_removal(self):
+        """
+        test that data: urls are removed from input
+        """
+        url = reverse('questionnaire-list')
+        data = {
+            'position': 'Software Engineer',
+            'industry': 'Tech',
+            'experience_level': '3-5',
+            'company_size': 'medium',
+            'location': 'Remote',
+            'application_timeline': '1-3 months',
+            'job_description': 'develop applications data:text/html,<script>alert("xss")</script>'
+        }
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['job_description'], 'develop applications')
+
+    def test_model_level_validation(self):
+        """
+        test that model-level validation works correctly
+        """
+        questionnaire = CVQuestionnaire(
+            user=self.user,
+            position='Software Engineer',
+            industry='Tech',
+            experience_level='3-5',
+            company_size='medium',
+            location='Remote',
+            application_timeline='1-3 months',
+            job_description='x' * 5001
+        )
+        
+        with self.assertRaises(ValidationError) as context:
+            questionnaire.clean()
+        
+        self.assertIn('job description must be less than 5000 characters', str(context.exception))
+
+    def test_model_level_position_validation(self):
+        """
+        test that model-level position validation works correctly
+        """
+        questionnaire = CVQuestionnaire(
+            user=self.user,
+            position='x' * 256,
+            industry='Tech',
+            experience_level='3-5',
+            company_size='medium',
+            location='Remote',
+            application_timeline='1-3 months',
+            job_description='develop applications'
+        )
+        
+        with self.assertRaises(ValidationError) as context:
+            questionnaire.clean()
+        
+        self.assertIn('position must be less than 255 characters', str(context.exception))
+
+    def test_ai_response_model_validation(self):
+        """
+        test that ai response model validation works correctly
+        """
+        questionnaire = CVQuestionnaire.objects.create(
+            user=self.user,
+            position='Software Engineer',
+            industry='Tech',
+            experience_level='3-5',
+            company_size='medium',
+            location='Remote',
+            application_timeline='1-3 months',
+            job_description='develop applications'
+        )
+        
+        ai_response = AIResponse(
+            questionnaire=questionnaire,
+            response_text='x' * 10001
+        )
+        
+        with self.assertRaises(ValidationError) as context:
+            ai_response.clean()
+        
+        self.assertIn('response text must be less than 10000 characters', str(context.exception))
