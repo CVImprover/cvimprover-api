@@ -42,16 +42,24 @@ class AIResponseAPITest(APITestCase):
             response_text='Here is a great product-focused CV tailored for your needs.'
         )
 
-    def test_get_ai_response_list(self):
-        """
-        Ensure the authenticated user can retrieve their AI responses.
-        """
-        url = reverse('ai-response-list')  # DRF auto-generates this from basename
-        response = self.client.get(url)
 
+    def test_get_ai_response_list_paginated(self):
+        """
+        Ensure the authenticated user receives paginated AI responses.
+        """
+        # Create more responses to test pagination
+        for i in range(15):
+            AIResponse.objects.create(
+                questionnaire=self.questionnaire,
+                response_text=f"Response {i}"
+            )
+        url = reverse('ai-response-list')
+        response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['response_text'], self.ai_response.response_text)
+        self.assertIn('results', response.data)
+        self.assertLessEqual(len(response.data['results']), 10)
+        self.assertIn('count', response.data)
+        self.assertGreaterEqual(response.data['count'], 16)
 
     def test_get_single_ai_response(self):
         """
@@ -65,6 +73,30 @@ class AIResponseAPITest(APITestCase):
 
 
 class CVQuestionnaireAPITest(APITestCase):
+
+    def test_get_cv_questionnaire_list_paginated(self):
+        """
+        Ensure the authenticated user receives paginated CV questionnaires.
+        """
+        # Create more questionnaires to test pagination
+        for i in range(15):
+            CVQuestionnaire.objects.create(
+                user=self.user,
+                position=f"Position {i}",
+                industry='Tech',
+                experience_level='5-7',
+                company_size='large',
+                location='On-site',
+                application_timeline='ASAP',
+                job_description='Test job description.'
+            )
+        url = reverse('questionnaire-list')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('results', response.data)
+        self.assertLessEqual(len(response.data['results']), 10)
+        self.assertIn('count', response.data)
+        self.assertGreaterEqual(response.data['count'], 16)
     def setUp(self):
         """
         Set up the test data: create a user and a CV questionnaire.

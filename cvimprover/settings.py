@@ -197,13 +197,16 @@ CORS_ORIGIN_WHITELIST = [
 ]
 
 
+
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
-    'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],   
+    'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'dj_rest_auth.jwt_auth.JWTCookieAuthentication',
         'rest_framework.authentication.SessionAuthentication',
-    ],    
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,
 }
 
 REST_AUTH_SERIALIZERS = {
@@ -213,7 +216,7 @@ REST_AUTH_SERIALIZERS = {
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'CVImprover',
-    'DESCRIPTION': 'API documentation for CVImprover project',
+    'DESCRIPTION': 'API documentation for CVImprover project.\n\nPagination: List endpoints are paginated using page number pagination. Use the `page` query parameter to navigate pages. Each paginated response includes `count`, `next`, `previous`, and `results` fields.',
     'VERSION': '1.0.0',
 }
 
