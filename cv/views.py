@@ -1,5 +1,6 @@
 from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 import markdown2
 from weasyprint import HTML
 from django.core.files.base import ContentFile
@@ -16,14 +17,35 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class StandardResultsSetPagination(PageNumberPagination):
+    """
+    Custom pagination class for CV endpoints.
+    Returns paginated results with metadata including:
+    - count: total number of items
+    - next: URL to next page (or null)
+    - previous: URL to previous page (or null)
+    - results: list of items for current page
+    """
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 class CVQuestionnaireViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing CV questionnaires.
+    Supports pagination with default page size of 10 items.
+    Use ?page=<number> to navigate pages.
+    Use ?page_size=<number> to customize items per page (max 100).
+    """
     queryset = CVQuestionnaire.objects.all()
     serializer_class = CVQuestionnaireSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
-        # Only return the current user's questionnaires
-        return self.queryset.filter(user=self.request.user)
+        # Only return the current user's questionnaires, ordered by most recent first
+        return self.queryset.filter(user=self.request.user).order_by('-submitted_at')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -35,6 +57,12 @@ class AIResponseViewSet(mixins.ListModelMixin,
                         mixins.RetrieveModelMixin,
                         mixins.CreateModelMixin,
                         viewsets.GenericViewSet):
+    """
+    ViewSet for managing AI responses.
+    Supports pagination with default page size of 10 items.
+    Use ?page=<number> to navigate pages.
+    Use ?page_size=<number> to customize items per page (max 100).
+    """
 
     @action(
         detail=True,
@@ -63,9 +91,11 @@ class AIResponseViewSet(mixins.ListModelMixin,
     queryset = AIResponse.objects.all()
     serializer_class = AIResponseSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
-        return self.queryset.filter(questionnaire__user=self.request.user)
+        # Return user's AI responses, ordered by most recent first
+        return self.queryset.filter(questionnaire__user=self.request.user).order_by('-created_at')
 
     def create(self, request, *args, **kwargs):
         questionnaire_id = request.data.get('questionnaire')
