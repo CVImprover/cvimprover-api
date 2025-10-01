@@ -44,14 +44,21 @@ class AIResponseAPITest(APITestCase):
 
     def test_get_ai_response_list(self):
         """
-        Ensure the authenticated user can retrieve their AI responses.
+        Ensure the authenticated user can retrieve their AI responses with pagination.
         """
         url = reverse('ai-response-list')  # DRF auto-generates this from basename
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['response_text'], self.ai_response.response_text)
+        # Check pagination structure
+        self.assertIn('count', response.data)
+        self.assertIn('next', response.data)
+        self.assertIn('previous', response.data)
+        self.assertIn('results', response.data)
+        # Check results
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(response.data['results'][0]['response_text'], self.ai_response.response_text)
 
     def test_get_single_ai_response(self):
         """
@@ -502,3 +509,195 @@ class AIResponseCreateErrorHandlingTest(APITestCase):
         ai_response = AIResponse.objects.get(id=response.data['id'])
         self.assertEqual(ai_response.questionnaire, self.questionnaire)
         self.assertEqual(ai_response.response_text, "Here is your improved CV content.")
+
+
+class PaginationTest(APITestCase):
+    """
+    Test suite for pagination functionality on both questionnaire and AI response endpoints.
+    """
+    def setUp(self):
+        """
+        Create a user and multiple questionnaires and AI responses for pagination testing.
+        """
+        self.user = User.objects.create_user(
+            username='paginationuser',
+            email='pagination@example.com',
+            password='securepass123'
+        )
+        self.client.force_authenticate(user=self.user)
+
+        # Create 15 questionnaires to test pagination
+        self.questionnaires = []
+        for i in range(15):
+            questionnaire = CVQuestionnaire.objects.create(
+                user=self.user,
+                position=f'Position {i+1}',
+                industry='Tech',
+                experience_level='3-5',
+                company_size='medium',
+                location='Remote',
+                application_timeline='1-2 months',
+                job_description=f'Job description for position {i+1}'
+            )
+            self.questionnaires.append(questionnaire)
+
+        # Create 15 AI responses for pagination testing
+        self.ai_responses = []
+        for questionnaire in self.questionnaires:
+            ai_response = AIResponse.objects.create(
+                questionnaire=questionnaire,
+                response_text=f'AI response for {questionnaire.position}'
+            )
+            self.ai_responses.append(ai_response)
+
+    def test_questionnaire_pagination_default_page_size(self):
+        """
+        Test that questionnaire list returns paginated results with default page size of 10.
+        """
+        url = reverse('questionnaire-list')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 15)
+        self.assertEqual(len(response.data['results']), 10)
+        self.assertIsNotNone(response.data['next'])
+        self.assertIsNone(response.data['previous'])
+
+    def test_questionnaire_pagination_second_page(self):
+        """
+        Test that questionnaire list second page returns correct results.
+        """
+        url = reverse('questionnaire-list')
+        response = self.client.get(url, {'page': 2})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 15)
+        self.assertEqual(len(response.data['results']), 5)
+        self.assertIsNone(response.data['next'])
+        self.assertIsNotNone(response.data['previous'])
+
+    def test_questionnaire_pagination_custom_page_size(self):
+        """
+        Test that questionnaire list respects custom page_size parameter.
+        """
+        url = reverse('questionnaire-list')
+        response = self.client.get(url, {'page_size': 5})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 15)
+        self.assertEqual(len(response.data['results']), 5)
+        self.assertIsNotNone(response.data['next'])
+
+    def test_questionnaire_pagination_max_page_size(self):
+        """
+        Test that questionnaire list respects max_page_size limit of 100.
+        """
+        url = reverse('questionnaire-list')
+        response = self.client.get(url, {'page_size': 200})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should be limited to 15 (total items) not 200
+        self.assertEqual(len(response.data['results']), 15)
+
+    def test_questionnaire_pagination_ordering(self):
+        """
+        Test that questionnaires are ordered by most recent first.
+        """
+        url = reverse('questionnaire-list')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Most recent should be Position 15 (last created)
+        self.assertEqual(response.data['results'][0]['position'], 'Position 15')
+        self.assertEqual(response.data['results'][9]['position'], 'Position 6')
+
+    def test_ai_response_pagination_default_page_size(self):
+        """
+        Test that AI response list returns paginated results with default page size of 10.
+        """
+        url = reverse('ai-response-list')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 15)
+        self.assertEqual(len(response.data['results']), 10)
+        self.assertIsNotNone(response.data['next'])
+        self.assertIsNone(response.data['previous'])
+
+    def test_ai_response_pagination_second_page(self):
+        """
+        Test that AI response list second page returns correct results.
+        """
+        url = reverse('ai-response-list')
+        response = self.client.get(url, {'page': 2})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 15)
+        self.assertEqual(len(response.data['results']), 5)
+        self.assertIsNone(response.data['next'])
+        self.assertIsNotNone(response.data['previous'])
+
+    def test_ai_response_pagination_custom_page_size(self):
+        """
+        Test that AI response list respects custom page_size parameter.
+        """
+        url = reverse('ai-response-list')
+        response = self.client.get(url, {'page_size': 5})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 15)
+        self.assertEqual(len(response.data['results']), 5)
+        self.assertIsNotNone(response.data['next'])
+
+    def test_ai_response_pagination_ordering(self):
+        """
+        Test that AI responses are ordered by most recent first.
+        """
+        url = reverse('ai-response-list')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Most recent should be the last created AI response
+        first_response_text = response.data['results'][0]['response_text']
+        self.assertIn('Position 15', first_response_text)
+
+    def test_pagination_invalid_page(self):
+        """
+        Test that requesting an invalid page number returns 404.
+        """
+        url = reverse('questionnaire-list')
+        response = self.client.get(url, {'page': 999})
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_pagination_user_isolation(self):
+        """
+        Test that pagination only shows items for the authenticated user.
+        """
+        # Create another user with questionnaires
+        other_user = User.objects.create_user(
+            username='otheruser',
+            email='other@example.com',
+            password='password123'
+        )
+        for i in range(5):
+            CVQuestionnaire.objects.create(
+                user=other_user,
+                position=f'Other Position {i+1}',
+                industry='Design',
+                experience_level='2-3',
+                company_size='small',
+                location='On-site',
+                application_timeline='ASAP',
+                job_description=f'Other job description {i+1}'
+            )
+
+        # Authenticated user should only see their own 15 questionnaires
+        url = reverse('questionnaire-list')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 15)
+        # Verify all results belong to authenticated user
+        for result in response.data['results']:
+            self.assertNotIn('Other Position', result['position'])
