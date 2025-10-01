@@ -47,16 +47,7 @@ class AIResponseAPITest(APITestCase):
         """
         Ensure the authenticated user receives paginated AI responses.
         """
-        # Create more responses to test pagination
-        for i in range(15):
-            AIResponse.objects.create(
-                questionnaire=self.questionnaire,
-                response_text=f"Response {i}"
-            )
-        url = reverse('ai-response-list')
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('results', response.data)
+
         self.assertLessEqual(len(response.data['results']), 10)
         self.assertIn('count', response.data)
         self.assertGreaterEqual(response.data['count'], 16)

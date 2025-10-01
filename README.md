@@ -151,6 +151,43 @@ A Django REST API backend for AI-powered CV optimization and improvement service
    python manage.py runserver
    ```
 
+
+## 📄 API Pagination
+
+All list endpoints (such as questionnaire and AI response lists) are paginated using page number pagination by default.
+
+### How Pagination Works
+
+- By default, each paginated endpoint returns up to 10 results per page.
+- Use the `page` query parameter to navigate pages (e.g., `/cv/questionnaire/?page=2`).
+- Paginated responses include the following fields:
+
+```
+{
+  "count": 42,           // Total number of items
+  "next": "<url>",      // URL to next page, or null
+  "previous": "<url>",  // URL to previous page, or null
+  "results": [ ... ]     // List of items for this page
+}
+```
+
+### Example: Fetching a Paginated List
+
+```bash
+curl -H "Authorization: Bearer <your-jwt-token>" \
+  http://localhost:8000/cv/questionnaire/?page=2
+```
+
+### Customizing Page Size
+
+You can request a different page size using the `page_size` query parameter (up to a maximum allowed by the server):
+
+```bash
+curl -H "Authorization: Bearer <your-jwt-token>" \
+  http://localhost:8000/cv/ai-responses/?page_size=5
+```
+
+---
 ## 🚦 Usage
 
 ### API Endpoints
