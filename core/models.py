@@ -1,35 +1,6 @@
-from django.contrib.auth.models import AbstractUser
 from django.db import models
-from .validators import validate_email_with_suggestions
-
-class User(AbstractUser):
-    date_of_birth = models.DateField(blank=True, null=True)
-    plan = models.ForeignKey('Plan', on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
-    stripe_subscription_id = models.CharField(max_length=255, blank=True, null=True)
-    stripe_subscription_status = models.CharField(max_length=50, blank=True, null=True)
-    stripe_customer_id = models.CharField(max_length=255, blank=True, null=True)
-    email = models.EmailField('email address', blank=False, null=False, unique=True, validators=[validate_email_with_suggestions])
-
-
-
-    class Meta:
-        ordering = ['date_joined']
-        verbose_name = 'User'
-        verbose_name_plural = 'Users'
-
-    def __str__(self):
-        return f"{self.username}"
-    
-    def save(self, *args, **kwargs):
-        if self._state.adding and not self.plan:
-            try:
-                self.plan = Plan.objects.get(name='Free')
-            except Plan.DoesNotExist:
-                pass
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return self.username
+from django.core.exceptions import ValidationError
+import stripe
 
 class Plan(models.Model):
     name = models.CharField(max_length=50, unique=True)
@@ -44,3 +15,33 @@ class Plan(models.Model):
 
     def __str__(self):
         return self.name
+
+    def clean(self):
+        errors = {}
+
+        # 1. Ensure at least one price ID is provided
+        if not self.stripe_price_id_monthly and not self.stripe_price_id_yearly:
+            errors['stripe_price_id_monthly'] = "At least one Stripe Price ID (monthly or yearly) must be provided."
+
+        # 2. Validate monthly/yearly price IDs with Stripe
+        stripe.api_key = "YOUR_STRIPE_SECRET_KEY"  # ضع هنا الـ key الخاص بك أو من settings
+        for field, price_id in {
+            'stripe_price_id_monthly': self.stripe_price_id_monthly,
+            'stripe_price_id_yearly': self.stripe_price_id_yearly,
+        }.items():
+            if price_id:
+                try:
+                    stripe.Price.retrieve(price_id)
+                except Exception:
+                    errors[field] = f"Invalid Stripe Price ID: {price_id}"
+
+        # 3. Validate unique order
+        if Plan.objects.exclude(pk=self.pk).filter(order=self.order).exists():
+            errors['order'] = "Another plan with this order already exists."
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.clean()  # enforce validation on save
+        super().save(*args, **kwargs)
