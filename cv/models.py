@@ -52,7 +52,7 @@ class AIResponse(models.Model):
 
     def __str__(self):
         created = self.created_at
-        if timezone.is_aware(created):
-            created = timezone.localtime(created)
-        created = created.replace(microsecond=0)
+        created = timezone.localtime(created)
+        # Remove microseconds for cleaner display
+        # created = created.replace(microsecond=0)
         return f"Response for {self.questionnaire.position} - {created.strftime('%Y-%m-%d %H:%M:%S')}"
