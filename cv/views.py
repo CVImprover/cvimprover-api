@@ -5,6 +5,7 @@ from weasyprint import HTML
 from django.core.files.base import ContentFile
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django.core.exceptions import ValidationError
 from .models import CVQuestionnaire, AIResponse
 from .serializers import CVQuestionnaireSerializer, AIResponseSerializer
 from openai import OpenAI
@@ -26,7 +27,12 @@ class CVQuestionnaireViewSet(viewsets.ModelViewSet):
         return self.queryset.filter(user=self.request.user)
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        instance = serializer.save(user=self.request.user)
+        try:
+            instance.full_clean()
+        except ValidationError as e:
+            instance.delete()
+            raise e
 
 
 
@@ -228,11 +234,17 @@ class AIResponseViewSet(mixins.ListModelMixin,
                 questionnaire=questionnaire,
                 response_text=ai_text
             )
+            ai_response.full_clean()
             logger.info(f"Successfully created AI response {ai_response.id} for user {request.user.id}")
             
             serializer = self.get_serializer(ai_response)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
             
+        except ValidationError as e:
+            logger.error(f"Validation error saving AI response for user {request.user.id}: {str(e)}")
+            return Response({
+                'error': f'Validation error: {str(e)}'
+            }, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.error(f"Error saving AI response for user {request.user.id}: {str(e)}")
             return Response({
