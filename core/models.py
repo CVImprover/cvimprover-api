@@ -18,7 +18,7 @@ class User(AbstractUser):
         verbose_name_plural = 'Users'
 
     def __str__(self):
-        return f"{self.username}"
+        return f"{self.username} ({self.email})"
     
     def save(self, *args, **kwargs):
         if self._state.adding and not self.plan:
@@ -27,9 +27,6 @@ class User(AbstractUser):
             except Plan.DoesNotExist:
                 pass
         super().save(*args, **kwargs)
-
-    def __str__(self):
-        return self.username
 
 class Plan(models.Model):
     name = models.CharField(max_length=50, unique=True)
@@ -43,4 +40,4 @@ class Plan(models.Model):
         ordering = ['order', 'name']
 
     def __str__(self):
-        return self.name
+        return f"{self.name} Plan"
