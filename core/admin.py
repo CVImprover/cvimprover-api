@@ -6,9 +6,23 @@ from unfold.admin import ModelAdmin
 from .models import User, Plan
 from rest_framework.authtoken.admin import TokenAdmin
 from rest_framework.authtoken.models import TokenProxy
+from django_celery_beat.models import (
+    PeriodicTask,
+    IntervalSchedule,
+    CrontabSchedule,
+    SolarSchedule,
+    ClockedSchedule,
+)
+
 
 admin.site.unregister(Group)
 admin.site.unregister(TokenProxy)
+# Unregister default Celery Beat admin
+admin.site.unregister(PeriodicTask)
+admin.site.unregister(IntervalSchedule)
+admin.site.unregister(CrontabSchedule)
+admin.site.unregister(SolarSchedule)
+admin.site.unregister(ClockedSchedule)
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin, ModelAdmin):
@@ -81,5 +95,31 @@ class GroupAdmin(BaseGroupAdmin, ModelAdmin):
     pass
 
 @admin.register(TokenProxy)
-class TokenAdmin(TokenAdmin,ModelAdmin):
+class TokenAdmin(TokenAdmin, ModelAdmin):
+    pass
+
+
+# Celery Beat Admin with Unfold
+@admin.register(PeriodicTask)
+class PeriodicTaskAdmin(ModelAdmin):
+    pass
+
+
+@admin.register(IntervalSchedule)
+class IntervalScheduleAdmin(ModelAdmin):
+    pass
+
+
+@admin.register(CrontabSchedule)
+class CrontabScheduleAdmin(ModelAdmin):
+    pass
+
+
+@admin.register(SolarSchedule)
+class SolarScheduleAdmin(ModelAdmin):
+    pass
+
+
+@admin.register(ClockedSchedule)
+class ClockedScheduleAdmin(ModelAdmin):
     pass
