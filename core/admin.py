@@ -13,6 +13,7 @@ from django_celery_beat.models import (
     SolarSchedule,
     ClockedSchedule,
 )
+from allauth.socialaccount.models import SocialAccount, SocialApp, SocialToken
 
 
 admin.site.unregister(Group)
@@ -23,6 +24,11 @@ admin.site.unregister(IntervalSchedule)
 admin.site.unregister(CrontabSchedule)
 admin.site.unregister(SolarSchedule)
 admin.site.unregister(ClockedSchedule)
+# Unregister Allauth models
+admin.site.unregister(SocialAccount)
+admin.site.unregister(SocialApp)
+admin.site.unregister(SocialToken)
+
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin, ModelAdmin):
@@ -123,3 +129,21 @@ class SolarScheduleAdmin(ModelAdmin):
 @admin.register(ClockedSchedule)
 class ClockedScheduleAdmin(ModelAdmin):
     pass
+
+
+# Allauth Admin with Unfold
+@admin.register(SocialAccount)
+class SocialAccountAdmin(ModelAdmin):
+    pass
+
+
+@admin.register(SocialApp)
+class SocialAppAdmin(ModelAdmin):
+    pass
+
+
+@admin.register(SocialToken)
+class SocialTokenAdmin(ModelAdmin):
+    pass
+
+
