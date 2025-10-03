@@ -4,9 +4,11 @@ from django.contrib.auth.models import Group
 from django.utils.translation import gettext_lazy as _
 from unfold.admin import ModelAdmin
 from .models import User, Plan
-
+from rest_framework.authtoken.admin import TokenAdmin
+from rest_framework.authtoken.models import TokenProxy
 
 admin.site.unregister(Group)
+admin.site.unregister(TokenProxy)
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin, ModelAdmin):
@@ -76,4 +78,8 @@ class PlanAdmin(ModelAdmin):
 
 @admin.register(Group)
 class GroupAdmin(BaseGroupAdmin, ModelAdmin):
+    pass
+
+@admin.register(TokenProxy)
+class TokenAdmin(TokenAdmin,ModelAdmin):
     pass
