@@ -77,6 +77,9 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
+
+    'core.middleware.rate_limit.RateLimitMiddleware',
+    'core.middleware.rate_limit.RequestLoggingMiddleware',  
 ]
 
 ROOT_URLCONF = 'cvimprover.urls'
@@ -219,6 +222,25 @@ REST_FRAMEWORK = {
         'dj_rest_auth.jwt_auth.JWTCookieAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],    
+
+    'DEFAULT_THROTTLE_CLASSES': [
+        'core.throttling.BurstRateThrottle',  # Prevent burst attacks
+        'core.throttling.IPBasedThrottle',    # IP-based DDoS protection
+    ],
+    
+    # Throttle rates (used by SimpleRateThrottle)
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '20/hour',           # Anonymous users
+        'burst': '50/minute',        # Burst protection
+        'ip_based': '1000/hour',     # Per-IP limit
+        'ai_responses': '3/day',     # AI generation (overridden by plan)
+        'questionnaires': '5/day',   # Questionnaires (overridden by plan)
+        'api_calls': '100/hour',     # General API (overridden by plan)
+        'uploads': '3/day',          # File uploads (overridden by plan)
+    },
+
+    # Custom exception handler
+    'EXCEPTION_HANDLER': 'core.exceptions.custom_exception_handler',
 }
 
 REST_AUTH_SERIALIZERS = {
