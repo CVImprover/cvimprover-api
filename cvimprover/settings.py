@@ -266,13 +266,15 @@ CACHES = {
 LOGGING_DIR = os.path.join(BASE_DIR, 'logs')
 os.makedirs(LOGGING_DIR, exist_ok=True)
 
+# cvimprover/settings.py
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
-    
+
     'formatters': {
         'verbose': {
-            'format': '[{levelname}] {asctime} {name}: {message}',
+            'format': '[{levelname}] {asctime} {name}:{lineno} - {message}',
             'style': '{',
         },
         'simple': {
@@ -284,38 +286,44 @@ LOGGING = {
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
-            'formatter': 'simple',
+            'formatter': 'verbose',
         },
-        'file': {
+        'file_info': {
             'class': 'logging.FileHandler',
-            'filename': os.path.join(LOGGING_DIR, 'stripe_webhooks.log'),
+            'filename': os.path.join(LOGGING_DIR, 'info.log'),
+            'formatter': 'verbose',
+        },
+        'file_debug': {
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(LOGGING_DIR, 'debug.log'),
+            'formatter': 'verbose',
+        },
+        'file_errors': {
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(LOGGING_DIR, 'errors.log'),
             'formatter': 'verbose',
         },
     },
 
     'loggers': {
         'django': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file_info'],
             'level': 'INFO',
             'propagate': True,
         },
-        '__main__': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
-            'propagate': False,
-        },
         'core': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
+            'handlers': ['console', 'file_info', 'file_debug', 'file_errors'],
+            'level': 'DEBUG',
             'propagate': False,
         },
         'cv': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
+            'handlers': ['console', 'file_info', 'file_debug', 'file_errors'],
+            'level': 'DEBUG',
             'propagate': False,
-        },        
+        },
     }
 }
+
 
 # Stripe
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY')
