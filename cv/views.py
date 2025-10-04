@@ -1,3 +1,5 @@
+# cv/views.py
+
 from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import action
 import markdown2
@@ -14,6 +16,15 @@ import os
 import PyPDF2
 import logging
 
+# Import throttle classes
+from core.throttling import (
+    AIResponseThrottle,
+    QuestionnaireThrottle,
+    UploadThrottle,
+    GeneralAPIThrottle,
+    get_rate_limit_status
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,15 +32,17 @@ class CVQuestionnaireViewSet(viewsets.ModelViewSet):
     queryset = CVQuestionnaire.objects.all()
     serializer_class = CVQuestionnaireSerializer
     permission_classes = [IsAuthenticated]
+    
+    # Apply throttles: questionnaire-specific + general API throttle
+    throttle_classes = [QuestionnaireThrottle, GeneralAPIThrottle]
 
     def get_queryset(self):
         # Only return the current user's questionnaires
         return self.queryset.filter(user=self.request.user)
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
-        logger.info(f"New questionnaire created for user {self.request.user.id}")
         instance = serializer.save(user=self.request.user)
+        logger.info(f"New questionnaire created for user {self.request.user.id}")
         try:
             instance.full_clean()
         except ValidationError as e:
@@ -37,12 +50,33 @@ class CVQuestionnaireViewSet(viewsets.ModelViewSet):
             raise e
 
 
-
-
 class AIResponseViewSet(mixins.ListModelMixin,
                         mixins.RetrieveModelMixin,
                         mixins.CreateModelMixin,
                         viewsets.GenericViewSet):
+    
+    queryset = AIResponse.objects.all()
+    serializer_class = AIResponseSerializer
+    permission_classes = [IsAuthenticated]
+    
+    # Default throttles (can be overridden per action)
+    throttle_classes = [GeneralAPIThrottle]
+
+    def get_queryset(self):
+        return self.queryset.filter(questionnaire__user=self.request.user)
+    
+    def get_throttles(self):
+        """
+        Apply different throttles based on the action.
+        Create action (AI generation) has stricter limits.
+        """
+        if self.action == 'create':
+            # AI generation gets the strictest throttling
+            return [AIResponseThrottle(), GeneralAPIThrottle()]
+        elif self.action == 'generate_pdf':
+            # PDF generation also uses upload throttle
+            return [UploadThrottle(), GeneralAPIThrottle()]
+        return [GeneralAPIThrottle()]
 
     @action(
         detail=True,
@@ -58,29 +92,53 @@ class AIResponseViewSet(mixins.ListModelMixin,
         ai_response = self.get_object()
         questionnaire = ai_response.questionnaire
         logger.info(f"Starting PDF generation for AIResponse {ai_response.id}, user {request.user.id}")
+        
         # Convert markdown to HTML
         html_content = markdown2.markdown(ai_response.response_text)
         logger.debug(f"Converted AI response {ai_response.id} to HTML for PDF generation")
+        
         # Generate PDF from HTML
         pdf_file = HTML(string=html_content).write_pdf()
         logger.info(f"PDF successfully generated for questionnaire {questionnaire.id}, user {request.user.id}")
+        
         # Save PDF to the questionnaire's resume field
         filename = f"ai_cv_{questionnaire.id}.pdf"
         questionnaire.resume.save(filename, ContentFile(pdf_file), save=True)
+        
         return Response({
             'pdf_url': questionnaire.resume.url
         })
-    
-    queryset = AIResponse.objects.all()
-    serializer_class = AIResponseSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        return self.queryset.filter(questionnaire__user=self.request.user)
 
     def create(self, request, *args, **kwargs):
+        """
+        Create AI response with comprehensive validation and rate limit checking.
+        """
         questionnaire_id = request.data.get('questionnaire')
         user_prompt = request.data.get('prompt')
+
+        # Check rate limit status before processing
+        rate_status = get_rate_limit_status(request.user, 'ai_responses')
+        
+        if rate_status and rate_status['remaining'] <= 0:
+            # User has hit their limit - provide helpful upgrade info
+            next_plan = self._get_next_plan(request.user)
+            
+            return Response({
+                'error': 'rate_limit_exceeded',
+                'message': 'You have reached your AI response limit for today.',
+                'limit_info': {
+                    'limit': rate_status['limit'],
+                    'used': rate_status['used'],
+                    'remaining': 0,
+                    'reset_at': rate_status['reset_at'],
+                    'current_plan': request.user.plan.name if request.user.plan else 'Free'
+                },
+                'upgrade_suggestion': {
+                    'message': f'Upgrade to {next_plan} for more AI responses',
+                    'recommended_plan': next_plan,
+                    'upgrade_url': '/core/plans/'
+                }
+            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
         # Basic input validation
         if not questionnaire_id or not user_prompt:
@@ -228,7 +286,7 @@ class AIResponseViewSet(mixins.ListModelMixin,
             }, status=status.HTTP_502_BAD_GATEWAY)
             
         except Exception as e:
-            logger.error(f"Unexpected error during OpenAI API call for user {request.user.id}: {str(e)}")
+            logger.error(f"Unexpectederror during OpenAI API call for user {request.user.id}: {str(e)}")
             return Response({
                 'error': 'An unexpected error occurred while processing your request. Please try again.'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -242,8 +300,21 @@ class AIResponseViewSet(mixins.ListModelMixin,
             ai_response.full_clean()
             logger.info(f"Successfully created AI response {ai_response.id} for user {request.user.id}")
             
+            # Include updated rate limit info in response
+            updated_rate_status = get_rate_limit_status(request.user, 'ai_responses')
+            
             serializer = self.get_serializer(ai_response)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            response_data = serializer.data
+            
+            # Add rate limit info to response
+            if updated_rate_status:
+                response_data['rate_limit_info'] = {
+                    'remaining': updated_rate_status['remaining'],
+                    'limit': updated_rate_status['limit'],
+                    'reset_at': updated_rate_status['reset_at']
+                }
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
             
         except ValidationError as e:
             logger.error(f"Validation error saving AI response for user {request.user.id}: {str(e)}")
@@ -255,3 +326,13 @@ class AIResponseViewSet(mixins.ListModelMixin,
             return Response({
                 'error': 'Failed to save AI response. Please try again.'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def _get_next_plan(self, user):
+        """Helper method to suggest next plan tier."""
+        if not user.plan or user.plan.name == 'Free':
+            return 'Basic'
+        elif user.plan.name == 'Basic':
+            return 'Pro'
+        elif user.plan.name == 'Pro':
+            return 'Premium'
+        return 'Premium'
