@@ -1,5 +1,6 @@
 # core/throttling.py
 from rest_framework.throttling import SimpleRateThrottle, UserRateThrottle
+from rest_framework.exceptions import Throttled
 from django.core.cache import cache
 from django.utils import timezone
 from datetime import timedelta
@@ -84,29 +85,35 @@ class PlanBasedThrottle(UserRateThrottle):
         return super().throttle_success()
     
     def throttle_failure(self):
-        """
-        Called when request is throttled. Store info for error response.
-        """
-        # Calculate when the limit resets
-        cache_key = self.get_cache_key(self.request, None)
-        history = cache.get(cache_key, [])
+        """Called when a request should be throttled."""
+        request = getattr(self, 'request', None)
+        if not request:
+            raise Throttled()
         
-        if history:
-            remaining_duration = self.duration - (self.now - history[-1])
-            reset_time = timezone.now() + timedelta(seconds=remaining_duration)
-        else:
-            reset_time = timezone.now()
+        # Get user's current plan
+        plan_name = request.user.plan.name if request.user.plan else 'Free'
         
-        # Store throttle info on request for custom error handling
-        self.request.throttle_info = {
-            'detail': f'{self.scope.replace("_", " ").title()} limit exceeded',
-            'current_plan': self.plan_name or 'Free',
-            'limit': self.current_limit or self.get_rate(),
-            'reset_at': reset_time.isoformat(),
-            'upgrade_url': '/core/plans/'
-        }
+        # Determine recommended upgrade
+        plan_hierarchy = ['Free', 'Basic', 'Pro', 'Premium']
+        try:
+            current_index = plan_hierarchy.index(plan_name)
+            if current_index < len(plan_hierarchy) - 1:
+                recommended_plan = plan_hierarchy[current_index + 1]
+            else:
+                recommended_plan = None
+        except ValueError:
+            recommended_plan = 'Basic'
         
-        return False
+        # Raise Throttled with custom detail
+        raise Throttled(detail={
+            'error': 'rate_limit_exceeded',
+            'message': 'Too many requests. Please try again later.',
+            'upgrade_suggestion': {
+                'recommended_plan': recommended_plan,
+                'upgrade_url': '/plans/'
+            } if recommended_plan else None
+        })
+
 
 
 class AIResponseThrottle(PlanBasedThrottle):
