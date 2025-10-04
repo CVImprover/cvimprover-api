@@ -27,6 +27,8 @@ class CVQuestionnaireViewSet(viewsets.ModelViewSet):
         return self.queryset.filter(user=self.request.user)
 
     def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+        logger.info(f"New questionnaire created for user {self.request.user.id}")
         instance = serializer.save(user=self.request.user)
         try:
             instance.full_clean()
@@ -55,10 +57,13 @@ class AIResponseViewSet(mixins.ListModelMixin,
         """
         ai_response = self.get_object()
         questionnaire = ai_response.questionnaire
+        logger.info(f"Starting PDF generation for AIResponse {ai_response.id}, user {request.user.id}")
         # Convert markdown to HTML
         html_content = markdown2.markdown(ai_response.response_text)
+        logger.debug(f"Converted AI response {ai_response.id} to HTML for PDF generation")
         # Generate PDF from HTML
         pdf_file = HTML(string=html_content).write_pdf()
+        logger.info(f"PDF successfully generated for questionnaire {questionnaire.id}, user {request.user.id}")
         # Save PDF to the questionnaire's resume field
         filename = f"ai_cv_{questionnaire.id}.pdf"
         questionnaire.resume.save(filename, ContentFile(pdf_file), save=True)

@@ -75,8 +75,12 @@ class CreateCheckoutSessionView(APIView):
         data = request.data
         plan_id = data.get('plan_id')
         billing_cycle = data.get('billing')
+        user_email = request.user.email
+
+        logger.info(f"Checkout session creation requested - User: {user_email}, Plan ID: {plan_id}, Billing: {billing_cycle}")
 
         if not plan_id or not billing_cycle:
+            logger.warning(f"Invalid checkout request - Missing plan_id or billing from user: {user_email}")
             return Response({'error': 'Missing plan_id or billing'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
@@ -87,8 +91,10 @@ class CreateCheckoutSessionView(APIView):
             )
 
             if not price_id:
+                logger.warning(f"Plan {plan.name} does not support {billing_cycle} billing - User: {user_email}")
                 return Response({'error': 'Plan does not support that billing cycle.'}, status=status.HTTP_400_BAD_REQUEST)
 
+            logger.debug(f"Creating Stripe checkout session - Price ID: {price_id}, User: {user_email}")
             session = stripe.checkout.Session.create(
                 payment_method_types=['card'],
                 mode='subscription',
@@ -103,12 +109,14 @@ class CreateCheckoutSessionView(APIView):
                     'plan_id': str(plan.id),
                 }
             )
-
+            logger.info(f"Stripe checkout session created successfully - Session ID: {session.id}, User: {user_email}, Plan: {plan.name}")
             return Response({'url': session.url})
         
         except Plan.DoesNotExist:
+            logger.error(f"Plan not found - Plan ID: {plan_id}, User: {user_email}")
             return Response({'error': 'Plan not found'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
+            logger.error(f"Unexpected error during checkout - User: {user_email}, Error: {str(e)}", exc_info=True)
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
 class StripeWebhookAuthentication(BaseAuthentication):
@@ -124,10 +132,13 @@ class StripeWebhookView(APIView):
         payload = request.body
         sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
         webhook_secret = settings.STRIPE_WEBHOOK_SECRET
+        logger.debug("Stripe webhook received")
 
         try:
             event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+            logger.info(f"Stripe webhook verified - Event type: {event['type']}, Event ID: {event['id']}")
         except (ValueError, stripe.error.SignatureVerificationError):
+            logger.error(f"Webhook verification failed - Invalid payload or signature")
             return HttpResponse(status=400)
 
         event_type = event["type"]
@@ -138,14 +149,16 @@ class StripeWebhookView(APIView):
             subscription_id = session.get("subscription")
             customer_id = session.get("customer")
             plan_id = session.get("metadata", {}).get("plan_id")
-            
+            logger.info(f"Processing checkout.session.completed - Email: {email}, Subscription ID: {subscription_id}, Plan ID: {plan_id}")
 
             try:
                 user = User.objects.get(email=email)
+                logger.debug(f"User found: {user.email}")
 
                 if plan_id:
                     plan = Plan.objects.get(id=plan_id)
                     user.plan = plan
+                    logger.debug(f"Plan assigned: {plan.name}")
 
                 if subscription_id:
                     try:
@@ -156,11 +169,13 @@ class StripeWebhookView(APIView):
                         current_period_end = subscription.get("current_period_end")
                         if current_period_end:
                             user.subscription_renewal_date = datetime.fromtimestamp(current_period_end, tz=timezone.utc)
+                            logger.debug(f"Subscription renewal date set: {user.subscription_renewal_date}")
                     except Exception as sub_err:
                         logger.error(f"❌ Failed to retrieve subscription {subscription_id}: {sub_err}")   
 
                 if customer_id:
-                    user.stripe_customer_id = customer_id                            
+                    user.stripe_customer_id = customer_id
+                    logger.debug(f"Stripe customer ID saved: {customer_id}")
 
                 user.save()
                 logger.info(f"✅ Updated user {user.email} to plan {user.plan} with subscription {subscription_id}")
@@ -170,6 +185,8 @@ class StripeWebhookView(APIView):
         elif event_type == "customer.subscription.deleted":
             subscription = event["data"]["object"]
             subscription_id = subscription["id"]
+
+            logger.warning(f"⚠ Processing subscription cancellation - Subscription ID: {subscription_id}")
 
             try:
                 user = User.objects.get(stripe_subscription_id=subscription_id)
@@ -185,13 +202,17 @@ class StripeWebhookView(APIView):
             subscription_id = subscription["id"]
             status = subscription["status"]
 
+            logger.info(f"🔄 Processing subscription update - Subscription ID: {subscription_id}, Status: {status}")
+
             try:
                 user = User.objects.get(stripe_subscription_id=subscription_id)
+                logger.debug(f"👤 User found: {user.email}")
                 user.stripe_subscription_status = status
 
                 current_period_end = subscription.get("current_period_end")
                 if current_period_end:
                     user.subscription_renewal_date = datetime.fromtimestamp(current_period_end, tz=timezone.utc)
+                    logger.debug(f"📅 Updated renewal date: {user.subscription_renewal_date}")
 
                 price_id = subscription["items"]["data"][0]["price"]["id"]
                 plan = Plan.objects.filter(
@@ -202,6 +223,7 @@ class StripeWebhookView(APIView):
 
                 if plan:
                     user.plan = plan
+                    logger.debug(f"📦 Plan updated to: {plan.name}")
                 user.save()
                 logger.info(f"🔄 Synced subscription update for {user.email} – {status}")
             except User.DoesNotExist:
@@ -259,8 +281,10 @@ class PlanListView(ListAPIView):
 
         if billing == 'monthly':
             queryset = queryset.exclude(stripe_price_id_monthly__isnull=True).exclude(stripe_price_id_monthly='')
+            logger.debug(f"Filtered to {queryset.count()} monthly plans")
         elif billing == 'yearly':
             queryset = queryset.exclude(stripe_price_id_yearly__isnull=True).exclude(stripe_price_id_yearly='')
+            logger.debug(f"Filtered to {queryset.count()} yearly plans")
 
         return queryset    
     
@@ -269,16 +293,22 @@ class CreateBillingPortalSessionView(APIView):
 
     def post(self, request):
         user = request.user
+        logger.info(f"🏦 Billing portal session requested - User: {user.email}")
         if not user.stripe_customer_id:
+            logger.warning(f"⚠️ Billing portal access denied - No Stripe customer ID for user: {user.email}")
             return Response({"error": "No Stripe customer ID found."}, status=400)
 
         try:
+            logger.debug(f"🔄 Creating billing portal session - Customer ID: {user.stripe_customer_id}")
             session = stripe.billing_portal.Session.create(
                 customer=user.stripe_customer_id,
                 return_url=f"https://{settings.FRONTEND_URL}/profile"
             )
+            logger.info(f"✅ Billing portal session created - User: {user.email}")
             return Response({"url": session.url})
         except Exception as e:
+            logger.error(f"❌ Error creating billing portal session - User: {user.email}, Error: {str(e)}",
+                         exc_info=True)
             return Response({"error": str(e)}, status=500)    
         
 
@@ -319,15 +349,19 @@ class VerifyCheckoutSessionView(APIView):
     )
     def get(self, request):
         session_id = request.query_params.get("session_id")
+        logger.info(f"🔍 Checkout session verification requested - User: {request.user.email}, Session ID: {session_id}")
         if not session_id:
+            logger.warning(f"⚠️ Session verification failed - Missing session_id for user: {request.user.email}")
             return Response({"error": "Missing session_id"}, status=status.HTTP_400_BAD_REQUEST)
 
         cache_key = f"stripe_verified_session_{session_id}"
         cached = cache.get(cache_key)
         if cached:
+            logger.debug(f"💾 Returning cached session verification - Session ID: {session_id}")
             return Response(cached)
 
         try:
+            logger.debug(f"🔄 Retrieving Stripe checkout session - Session ID: {session_id}")
             session = stripe.checkout.Session.retrieve(
                 session_id,
                 expand=["subscription"]
@@ -336,9 +370,11 @@ class VerifyCheckoutSessionView(APIView):
             items = subscription.get("items", {}).get("data", [])
             print(f"subscription: {subscription}")
             if not subscription:
+                logger.warning(f"⚠️ No subscription found in session - User: {request.user.email}, Session ID: {session_id}")
                 return Response({"error": "No subscription found in session."}, status=status.HTTP_400_BAD_REQUEST)
 
             if not items:
+                logger.warning(f"⚠️ Subscription items missing - User: {request.user.email}, Session ID: {session_id}")
                 return Response({"error": "Subscription items missing."}, status=status.HTTP_400_BAD_REQUEST)
             
             user = request.user
@@ -348,6 +384,7 @@ class VerifyCheckoutSessionView(APIView):
             period_start_ts = item.get("current_period_start")
             period_end_ts = item.get("current_period_end")
             if not period_start_ts or not period_end_ts:
+                logger.warning(f"⚠️ Subscription period not available - User: {user.email}, Subscription ID: {sub_id}")
                 return Response({"error": "Subscription period not available yet."}, status=status.HTTP_400_BAD_REQUEST)
 
             period_start = datetime.fromtimestamp(period_start_ts).isoformat()
@@ -359,11 +396,14 @@ class VerifyCheckoutSessionView(APIView):
                 try:
                     plan = Plan.objects.get(id=plan_id)
                     user.plan = plan
+                    logger.debug(f"📦 Plan assigned from metadata: {plan.name}")
                 except Plan.DoesNotExist:
                     logger.warning(f"⚠️ Plan with ID {plan_id} not found.")
             user.stripe_subscription_id = sub_id
             user.stripe_subscription_status = status_str
             user.save()
+            logger.info(
+                f"✅ Session verified and user updated - User: {user.email}, Plan: {plan.name if plan else 'Unknown'}, Status: {status_str}")
 
             response_data = {
                 "success": True,
@@ -377,6 +417,7 @@ class VerifyCheckoutSessionView(APIView):
             }
 
             cache.set(cache_key, response_data, timeout=60 * 60)  # 1 hour
+            logger.debug(f"💾 Session verification result cached - Session ID: {session_id}")
             return Response(response_data)
 
         except Exception as e:
@@ -446,6 +487,7 @@ class HealthCheckView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
+        logger.debug(" Health check initiated")
         services = {}
 
         # Check DB
@@ -453,6 +495,7 @@ class HealthCheckView(APIView):
             with connection.cursor() as cursor:
                 cursor.execute("SELECT 1")
             services['db'] = 'healthy'
+            logger.debug("✅ Database health check: healthy")
         except Exception as e:
             logger.error(f"DB health check failed: {e}")
             services['db'] = 'unhealthy'
@@ -462,6 +505,7 @@ class HealthCheckView(APIView):
             redis_client = Redis.from_url(settings.CACHE_URL)
             redis_client.ping()
             services['redis'] = 'healthy'
+            logger.debug("✅ Redis health check: healthy")
         except Exception as e:
             logger.error(f"Redis health check failed: {e}")
             services['redis'] = 'unhealthy'
@@ -473,9 +517,11 @@ class HealthCheckView(APIView):
                 client = OpenAI(api_key=api_key)
                 client.models.list()  # Lightweight check
                 services['openai'] = 'healthy'
+                logger.debug("✅ OpenAI health check: healthy")
             except Exception as e:
                 logger.error(f"OpenAI health check failed: {e}")
                 services['openai'] = 'unhealthy'
+
         else:
             services['openai'] = 'skipped'
 
