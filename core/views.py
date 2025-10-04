@@ -15,6 +15,7 @@ from .models import Plan
 from datetime import datetime
 from django.utils import timezone
 from django.core.cache import cache
+from core.throttling import get_rate_limit_status
 from dj_rest_auth.registration.views import SocialLoginView
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from django.db import connection
@@ -533,3 +534,278 @@ class HealthCheckView(APIView):
             'overall': overall,
             'services': services
         }, status=http_status)
+
+
+@extend_schema(
+    responses={
+        200: {
+            'type': 'object',
+            'properties': {
+                'user': {
+                    'type': 'object',
+                    'properties': {
+                        'username': {'type': 'string'},
+                        'email': {'type': 'string'},
+                        'plan': {'type': 'string'},
+                    }
+                },
+                'rate_limits': {
+                    'type': 'object',
+                    'properties': {
+                        'ai_responses': {
+                            'type': 'object',
+                            'properties': {
+                                'limit': {'type': 'integer'},
+                                'used': {'type': 'integer'},
+                                'remaining': {'type': 'integer'},
+                                'reset_at': {'type': 'string', 'format': 'date-time'},
+                                'percentage_used': {'type': 'number'},
+                                'status': {'type': 'string', 'enum': ['healthy', 'moderate', 'warning', 'critical']},
+                            }
+                        },
+                        'questionnaires': {
+                            'type': 'object',
+                            'properties': {
+                                'limit': {'type': 'integer'},
+                                'used': {'type': 'integer'},
+                                'remaining': {'type': 'integer'},
+                                'reset_at': {'type': 'string', 'format': 'date-time'},
+                                'percentage_used': {'type': 'number'},
+                                'status': {'type': 'string'},
+                            }
+                        },
+                        'api_calls': {
+                            'type': 'object',
+                            'properties': {
+                                'limit': {'type': 'integer'},
+                                'used': {'type': 'integer'},
+                                'remaining': {'type': 'integer'},
+                                'reset_at': {'type': 'string', 'format': 'date-time'},
+                                'percentage_used': {'type': 'number'},
+                                'status': {'type': 'string'},
+                            }
+                        },
+                    }
+                },
+                'upgrade_recommendation': {
+                    'type': 'object',
+                    'properties': {
+                        'should_upgrade': {'type': 'boolean'},
+                        'reason': {'type': 'string'},
+                        'recommended_plan': {'type': 'string'},
+                        'upgrade_url': {'type': 'string'},
+                        'high_usage_scopes': {
+                            'type': 'array',
+                            'items': {'type': 'string'}
+                        }
+                    }
+                }
+            }
+        }
+    },
+    examples=[
+        OpenApiExample(
+            name="Free plan user with moderate usage",
+            value={
+                "user": {
+                    "username": "john_doe",
+                    "email": "john@example.com",
+                    "plan": "Free"
+                },
+                "rate_limits": {
+                    "ai_responses": {
+                        "limit": 3,
+                        "used": 2,
+                        "remaining": 1,
+                        "reset_at": "2025-10-05T00:00:00Z",
+                        "percentage_used": 66.67,
+                        "status": "moderate"
+                    },
+                    "questionnaires": {
+                        "limit": 5,
+                        "used": 1,
+                        "remaining": 4,
+                        "reset_at": "2025-10-05T00:00:00Z",
+                        "percentage_used": 20.0,
+                        "status": "healthy"
+                    },
+                    "api_calls": {
+                        "limit": 100,
+                        "used": 45,
+                        "remaining": 55,
+                        "reset_at": "2025-10-05T01:00:00Z",
+                        "percentage_used": 45.0,
+                        "status": "healthy"
+                    }
+                },
+                "upgrade_recommendation": {
+                    "should_upgrade": False,
+                    "reason": "Your usage is within comfortable limits",
+                    "recommended_plan": None,
+                    "upgrade_url": None
+                }
+            },
+            response_only=True
+        ),
+        OpenApiExample(
+            name="User approaching limits - upgrade suggested",
+            value={
+                "user": {
+                    "username": "jane_smith",
+                    "email": "jane@example.com",
+                    "plan": "Basic"
+                },
+                "rate_limits": {
+                    "ai_responses": {
+                        "limit": 20,
+                        "used": 18,
+                        "remaining": 2,
+                        "reset_at": "2025-10-05T00:00:00Z",
+                        "percentage_used": 90.0,
+                        "status": "critical"
+                    },
+                    "questionnaires": {
+                        "limit": 50,
+                        "used": 35,
+                        "remaining": 15,
+                        "reset_at": "2025-10-05T00:00:00Z",
+                        "percentage_used": 70.0,
+                        "status": "warning"
+                    },
+                    "api_calls": {
+                        "limit": 300,
+                        "used": 120,
+                        "remaining": 180,
+                        "reset_at": "2025-10-05T01:00:00Z",
+                        "percentage_used": 40.0,
+                        "status": "healthy"
+                    }
+                },
+                "upgrade_recommendation": {
+                    "should_upgrade": True,
+                    "reason": "You are approaching limits on: ai_responses, questionnaires",
+                    "recommended_plan": "Pro",
+                    "upgrade_url": "/core/plans/",
+                    "high_usage_scopes": ["ai_responses", "questionnaires"]
+                }
+            },
+            response_only=True
+        )
+    ]
+)
+class RateLimitStatusView(APIView):
+    """
+    Get detailed rate limit status for the authenticated user.
+    Shows current usage, remaining quota, and upgrade recommendations.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        user = request.user
+        logger.info(f"📊 Rate limit status requested - User: {user.email}")
+        
+        scopes = ['ai_responses', 'questionnaires', 'api_calls']
+        rate_limits = {}
+        
+        for scope in scopes:
+            status_data = get_rate_limit_status(user, scope)
+            if status_data:
+                percentage_used = (
+                    (status_data['used'] / status_data['limit'] * 100) 
+                    if status_data['limit'] > 0 else 0
+                )
+                
+                rate_limits[scope] = {
+                    'limit': status_data['limit'],
+                    'used': status_data['used'],
+                    'remaining': status_data['remaining'],
+                    'reset_at': status_data['reset_at'],
+                    'percentage_used': round(percentage_used, 2),
+                    'status': self._get_status_label(percentage_used)
+                }
+                
+                logger.debug(
+                    f"Rate limit for {scope} - User: {user.email}, "
+                    f"Used: {status_data['used']}/{status_data['limit']}, "
+                    f"Status: {self._get_status_label(percentage_used)}"
+                )
+        
+        # Determine if user should upgrade
+        upgrade_recommendation = self._get_upgrade_recommendation(user, rate_limits)
+        
+        response_data = {
+            'user': {
+                'username': user.username,
+                'email': user.email,
+                'plan': user.plan.name if user.plan else 'Free',
+            },
+            'rate_limits': rate_limits,
+            'upgrade_recommendation': upgrade_recommendation
+        }
+        
+        logger.info(
+            f"✅ Rate limit status returned - User: {user.email}, "
+            f"Plan: {user.plan.name if user.plan else 'Free'}, "
+            f"Should upgrade: {upgrade_recommendation['should_upgrade']}"
+        )
+        
+        return Response(response_data)
+    
+    def _get_status_label(self, percentage):
+        """Get a human-readable status label based on usage percentage."""
+        if percentage >= 90:
+            return 'critical'
+        elif percentage >= 70:
+            return 'warning'
+        elif percentage >= 50:
+            return 'moderate'
+        else:
+            return 'healthy'
+    
+    def _get_upgrade_recommendation(self, user, rate_limits):
+        """
+        Determine if user should upgrade their plan based on usage patterns.
+        """
+        current_plan = user.plan.name if user.plan else 'Free'
+        
+        # Check if any limit is close to being exceeded
+        high_usage_scopes = []
+        for scope, data in rate_limits.items():
+            if data['percentage_used'] >= 80:
+                high_usage_scopes.append(scope)
+        
+        if not high_usage_scopes:
+            logger.debug(f"No upgrade needed for user {user.email} - all usage below 80%")
+            return {
+                'should_upgrade': False,
+                'reason': 'Your usage is within comfortable limits',
+                'recommended_plan': None,
+                'upgrade_url': None
+            }
+        
+        # Recommend next tier
+        plan_hierarchy = ['Free', 'Basic', 'Pro', 'Premium']
+        current_index = plan_hierarchy.index(current_plan) if current_plan in plan_hierarchy else 0
+        
+        if current_index < len(plan_hierarchy) - 1:
+            recommended_plan = plan_hierarchy[current_index + 1]
+            logger.info(
+                f"💡 Upgrade recommended for user {user.email} - "
+                f"From {current_plan} to {recommended_plan}, "
+                f"High usage scopes: {', '.join(high_usage_scopes)}"
+            )
+            return {
+                'should_upgrade': True,
+                'reason': f'You are approaching limits on: {", ".join(high_usage_scopes)}',
+                'recommended_plan': recommended_plan,
+                'upgrade_url': '/core/plans/',
+                'high_usage_scopes': high_usage_scopes
+            }
+        
+        logger.debug(f"User {user.email} is on highest plan (Premium) - no upgrade available")
+        return {
+            'should_upgrade': False,
+            'reason': 'You are on the highest plan',
+            'recommended_plan': None,
+            'upgrade_url': None
+        }
