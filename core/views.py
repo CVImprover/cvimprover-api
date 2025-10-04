@@ -109,8 +109,7 @@ class CreateCheckoutSessionView(APIView):
                     'plan_id': str(plan.id),
                 }
             )
-            logger.info(
-                f"Stripe checkout session created successfully - Session ID: {session.id}, User: {user_email}, Plan: {plan.name}")
+            logger.info(f"Stripe checkout session created successfully - Session ID: {session.id}, User: {user_email}, Plan: {plan.name}")
             return Response({'url': session.url})
         
         except Plan.DoesNotExist:
@@ -150,8 +149,7 @@ class StripeWebhookView(APIView):
             subscription_id = session.get("subscription")
             customer_id = session.get("customer")
             plan_id = session.get("metadata", {}).get("plan_id")
-            logger.info(
-                f"Processing checkout.session.completed - Email: {email}, Subscription ID: {subscription_id}, Plan ID: {plan_id}")
+            logger.info(f"Processing checkout.session.completed - Email: {email}, Subscription ID: {subscription_id}, Plan ID: {plan_id}")
 
             try:
                 user = User.objects.get(email=email)
@@ -351,8 +349,7 @@ class VerifyCheckoutSessionView(APIView):
     )
     def get(self, request):
         session_id = request.query_params.get("session_id")
-        logger.info(
-            f"🔍 Checkout session verification requested - User: {request.user.email}, Session ID: {session_id}")
+        logger.info(f"🔍 Checkout session verification requested - User: {request.user.email}, Session ID: {session_id}")
         if not session_id:
             logger.warning(f"⚠️ Session verification failed - Missing session_id for user: {request.user.email}")
             return Response({"error": "Missing session_id"}, status=status.HTTP_400_BAD_REQUEST)
@@ -373,8 +370,7 @@ class VerifyCheckoutSessionView(APIView):
             items = subscription.get("items", {}).get("data", [])
             print(f"subscription: {subscription}")
             if not subscription:
-                logger.warning(
-                    f"⚠️ No subscription found in session - User: {request.user.email}, Session ID: {session_id}")
+                logger.warning(f"⚠️ No subscription found in session - User: {request.user.email}, Session ID: {session_id}")
                 return Response({"error": "No subscription found in session."}, status=status.HTTP_400_BAD_REQUEST)
 
             if not items:
