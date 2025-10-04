@@ -26,31 +26,24 @@ class CVQuestionnaire(models.Model):
         ('6+ months', '6+ months'),
     ]
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='questionnaires')
-    position = models.CharField(
-        max_length=255,
-        help_text="job position (max 255 characters)"
-    )
-    industry = models.CharField(
-        max_length=255,
-        help_text="industry (max 255 characters)"
-    )
-    experience_level = models.CharField(max_length=10, choices=EXPERIENCE_LEVEL_CHOICES)
-    company_size = models.CharField(max_length=10, choices=COMPANY_SIZE_CHOICES)
-    location = models.CharField(
-        max_length=255, 
-        blank=True, 
-        null=True,
-        help_text="location (max 255 characters)"
-    )
-    application_timeline = models.CharField(max_length=20, choices=APPLICATION_TIMELINE_CHOICES)
-    job_description = models.TextField(
-        blank=True, 
-        null=True,
-        help_text="job description (max 5000 characters)"
-    )
-    submitted_at = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='questionnaires', db_index=True)
+    position = models.CharField(max_length=255, help_text="job position (max 255 characters)", db_index=True)
+    industry = models.CharField(max_length=255, help_text="industry (max 255 characters)", db_index=True)
+    experience_level = models.CharField(max_length=10, choices=EXPERIENCE_LEVEL_CHOICES, db_index=True)
+    company_size = models.CharField(max_length=10, choices=COMPANY_SIZE_CHOICES, db_index=True)
+    location = models.CharField(max_length=255, blank=True, null=True, help_text="location (max 255 characters)")
+    application_timeline = models.CharField(max_length=20, choices=APPLICATION_TIMELINE_CHOICES, db_index=True)
+    job_description = models.TextField(blank=True, null=True, help_text="job description (max 5000 characters)")
+    submitted_at = models.DateTimeField(auto_now_add=True, db_index=True)
     resume = models.FileField(upload_to='resumes/', blank=True, null=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'submitted_at'], name='cv_user_submitted_idx'),
+            models.Index(fields=['position', 'industry'], name='cv_position_industry_idx'),
+            models.Index(fields=['experience_level', 'company_size'], name='cv_exp_company_idx'),
+            models.Index(fields=['submitted_at'], name='cv_submitted_at_idx'),
+        ]
 
     def clean(self):
         """
@@ -83,16 +76,15 @@ class CVQuestionnaire(models.Model):
 
 
 class AIResponse(models.Model):
-    # model was OneToOneField
-    questionnaire = models.ForeignKey(
-        CVQuestionnaire, 
-        related_name='ai_response', 
-        on_delete=models.CASCADE
-    )
-    response_text = models.TextField(
-        help_text="ai generated response text"
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
+    questionnaire = models.ForeignKey(CVQuestionnaire, related_name='ai_response', on_delete=models.CASCADE, db_index=True)
+    response_text = models.TextField(help_text="ai generated response text")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['questionnaire', 'created_at'], name='ai_quest_created_idx'),
+            models.Index(fields=['created_at'], name='ai_created_at_idx'),
+        ]
 
     def clean(self):
         """
