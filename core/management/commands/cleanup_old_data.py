@@ -1,64 +1,3 @@
-"""
-Django Management Command: cleanup_old_data
-
-DESCRIPTION:
-    Clean up old AI responses and orphaned resume files to save storage space.
-    This command helps maintain database and file system hygiene by removing
-    outdated data that is no longer needed.
-
-FEATURES:
-    ✅ Configurable retention period (default: 90 days)
-    ✅ Dry-run mode for safe testing
-    ✅ Confirmation prompts for safety
-    ✅ Force mode to skip confirmations
-    ✅ Orphaned file cleanup with size reporting
-    ✅ Empty directory cleanup
-    ✅ Human-readable file size formatting
-    ✅ Transaction safety for database operations
-    ✅ Detailed logging and progress reporting
-
-USAGE EXAMPLES:
-
-    1. Test what would be cleaned up (safe dry-run):
-       python manage.py cleanup_old_data --days=30 --dry-run --cleanup-files
-
-    2. Clean up AI responses older than 60 days (with confirmation):
-       python manage.py cleanup_old_data --days=60
-
-    3. Clean up both AI responses and files older than 90 days (default):
-       python manage.py cleanup_old_data --cleanup-files
-
-    4. Force cleanup without confirmation prompts:
-       python manage.py cleanup_old_data --days=30 --cleanup-files --force
-
-    5. Only clean up orphaned files (no AI responses):
-       python manage.py cleanup_old_data --days=0 --cleanup-files
-
-DOCKER USAGE:
-    Run inside Docker container:
-    docker-compose exec web python manage.py cleanup_old_data --dry-run --cleanup-files
-
-WHAT GETS CLEANED:
-    - AIResponse records older than specified days
-    - Resume files that are no longer referenced by any CVQuestionnaire
-    - Empty directories in the resumes folder
-
-SAFETY FEATURES:
-    - Dry-run mode shows what would be deleted without making changes
-    - Confirmation prompts before actual deletion (unless --force used)
-    - Database operations wrapped in transactions
-    - Detailed error handling and reporting
-
-RECOMMENDED WORKFLOW:
-    1. First run with --dry-run to see what would be cleaned
-    2. Review the output carefully
-    3. Run without --dry-run to perform actual cleanup
-    4. Consider adding to cron job for regular maintenance
-
-CRON EXAMPLE (monthly cleanup):
-    0 2 1 * * cd /app && python manage.py cleanup_old_data --days=90 --cleanup-files --force
-"""
-
 import os
 from datetime import datetime, timedelta
 from django.core.management.base import BaseCommand, CommandError
@@ -106,7 +45,7 @@ class Command(BaseCommand):
         cutoff_date = timezone.now() - timedelta(days=days)
         
         self.stdout.write(
-            self.style.WARNING(f"🧹 Starting cleanup process...")
+            self.style.WARNING(f"Starting cleanup process...")
         )
         self.stdout.write(f"   Cutoff date: {cutoff_date.strftime('%Y-%m-%d %H:%M:%S')}")
         
@@ -123,12 +62,12 @@ class Command(BaseCommand):
             self._cleanup_orphaned_files(dry_run, force)
         
         self.stdout.write(
-            self.style.SUCCESS("✅ Cleanup process completed successfully!")
+            self.style.SUCCESS("Cleanup process completed successfully!")
         )
 
     def _cleanup_ai_responses(self, cutoff_date, dry_run, force):
         """Delete AI responses older than cutoff date"""
-        self.stdout.write("\n📋 Analyzing AI responses...")
+        self.stdout.write("\nAnalyzing AI responses...")
         
         # Find old AI responses
         old_responses = AIResponse.objects.filter(created_at__lt=cutoff_date)
@@ -150,7 +89,7 @@ class Command(BaseCommand):
         
         # Confirm deletion unless force is used
         if not force:
-            confirm = input(f"\n⚠️  Delete {count} AI response(s)? [y/N]: ")
+            confirm = input(f"\nWarning: Delete {count} AI response(s)? [y/N]: ")
             if confirm.lower() not in ['y', 'yes']:
                 self.stdout.write("   Skipped AI response cleanup.")
                 return
@@ -160,16 +99,16 @@ class Command(BaseCommand):
             with transaction.atomic():
                 deleted_count, _ = old_responses.delete()
                 self.stdout.write(
-                    self.style.SUCCESS(f"   ✅ Deleted {deleted_count} AI response(s)")
+                    self.style.SUCCESS(f"   Deleted {deleted_count} AI response(s)")
                 )
         except Exception as e:
             self.stdout.write(
-                self.style.ERROR(f"   ❌ Error deleting AI responses: {str(e)}")
+                self.style.ERROR(f"   Error deleting AI responses: {str(e)}")
             )
 
     def _cleanup_orphaned_files(self, dry_run, force):
         """Remove orphaned resume files that no longer have associated questionnaires"""
-        self.stdout.write("\n📁 Analyzing uploaded files...")
+        self.stdout.write("\nAnalyzing uploaded files...")
         
         # Get the resumes directory path
         media_root = settings.MEDIA_ROOT
@@ -189,7 +128,7 @@ class Command(BaseCommand):
                     all_files.append((file_path, relative_path))
         except Exception as e:
             self.stdout.write(
-                self.style.ERROR(f"   ❌ Error reading resumes directory: {str(e)}")
+                self.style.ERROR(f"   Error reading resumes directory: {str(e)}")
             )
             return
         
@@ -242,7 +181,7 @@ class Command(BaseCommand):
         
         # Confirm deletion unless force is used
         if not force:
-            confirm = input(f"\n⚠️  Delete {len(orphaned_files)} orphaned file(s) ({self._format_file_size(total_size)})? [y/N]: ")
+            confirm = input(f"\nWarning: Delete {len(orphaned_files)} orphaned file(s) ({self._format_file_size(total_size)})? [y/N]: ")
             if confirm.lower() not in ['y', 'yes']:
                 self.stdout.write("   Skipped orphaned files cleanup.")
                 return
@@ -264,7 +203,7 @@ class Command(BaseCommand):
         
         self.stdout.write(
             self.style.SUCCESS(
-                f"   ✅ Deleted {deleted_count} orphaned file(s) "
+                f"   Deleted {deleted_count} orphaned file(s) "
                 f"({self._format_file_size(deleted_size)} freed)"
             )
         )
