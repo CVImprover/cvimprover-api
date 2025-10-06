@@ -1,5 +1,17 @@
-version: '3.9'
+# =============================================================================
+# Docker Compose Configuration - Optimized for Performance
+# =============================================================================
+# Note: 'version' field is now obsolete and removed per Docker Compose spec
+# =============================================================================
+# This configuration uses optimized Docker images with multi-stage builds
+# for better performance and reduced image sizes
+# =============================================================================
 
+# =============================================================================
+# Reusable Configuration Blocks (DRY principle)
+# =============================================================================
+
+# PostgreSQL common configuration
 x-postgres-common: &postgres-common
   image: postgres:latest
   user: postgres
@@ -12,6 +24,7 @@ x-postgres-common: &postgres-common
     timeout: 5s
     retries: 10
 
+# Redis common configuration
 x-redis-common: &redis-common
   image: redis:alpine
   restart: always
@@ -19,25 +32,57 @@ x-redis-common: &redis-common
     test: ["CMD", "redis-cli", "ping"]
     interval: 10s
     timeout: 5s
-    retries: 5    
+    retries: 5
+
+# Django application common configuration
+# Shared between web, celery, and celery-beat services
+x-django-common: &django-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+    # Enable BuildKit for faster builds and better caching
+    # BuildKit provides improved layer caching and parallel builds
+    args:
+      BUILDKIT_INLINE_CACHE: 1
+  env_file:
+    - .env
+  depends_on:
+    postgres_master:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+# =============================================================================
+# Service Definitions
+# =============================================================================
 
 services:
+  # ---------------------------------------------------------------------------
+  # Django Web Application
+  # ---------------------------------------------------------------------------
   web:
+    <<: *django-common
     container_name: cvimprover_django
-    build: .
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
+      # Mount source code for development hot-reload
+      # For production, remove this volume mount
       - .:/app
     ports:
       - "8000:8000"
-    env_file:
-      - .env
     environment:
       DB_HOST: ${DB_HOST}
-    depends_on:
-      postgres_master:
-        condition: service_healthy
+    # Healthcheck to ensure the service is responding
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Master Database
+  # ---------------------------------------------------------------------------
   postgres_master:
     <<: *postgres-common
     container_name: cvimprover_postgres-master
@@ -48,36 +93,100 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}      
     volumes:
+      # Persist database data
       - postgres_data:/var/lib/postgresql/data/
 
+  # ---------------------------------------------------------------------------
+  # Redis Cache and Message Broker
+  # ---------------------------------------------------------------------------
   redis:
     <<: *redis-common
     container_name: cvimprover_redis
     ports:
       - "6379:6379"
+    # Persist Redis data for cache durability
+    volumes:
+      - redis_data:/data
 
+  # ---------------------------------------------------------------------------
+  # Celery Worker for Asynchronous Tasks
+  # ---------------------------------------------------------------------------
   celery:
+    <<: *django-common
     container_name: cvimprover_celery
-    build: .
     command: >
       celery -A cvimprover worker --loglevel=info
     volumes:
+      # Mount source code for development
       - .:/app
     depends_on:
       - web
       - redis
+    # Healthcheck for celery worker
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A cvimprover inspect ping -d celery@$$HOSTNAME || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Celery Beat for Scheduled Tasks
+  # ---------------------------------------------------------------------------
   celery-beat:
+    <<: *django-common
     container_name: cvimprover_celery_beat
-    build: .
     command: >
       celery -A cvimprover beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     volumes:
+      # Mount source code for development
       - .:/app
     depends_on:
       - web
       - redis
 
-
+# =============================================================================
+# Named Volumes for Data Persistence
+# =============================================================================
 volumes:
   postgres_data:
+    # PostgreSQL data persists across container restarts
+  redis_data:
+    # Redis data persists across container restarts
+
+# =============================================================================
+# Performance Optimization Tips:
+# =============================================================================
+# 1. Build with BuildKit for faster builds:
+#    DOCKER_BUILDKIT=1 docker-compose build
+#
+# 2. Use build cache from previous builds:
+#    docker-compose build --build-arg BUILDKIT_INLINE_CACHE=1
+#
+# 3. For production, remove volume mounts and rebuild:
+#    This prevents code changes from affecting running containers
+#
+# 4. Enable BuildKit by default (add to ~/.docker/config.json):
+#    { "features": { "buildkit": true } }
+#
+# 5. Monitor resource usage:
+#    docker stats
+#
+# 6. Clean up unused resources periodically:
+#    docker system prune -a --volumes
+# =============================================================================
+
+# =============================================================================
+# Development vs Production:
+# =============================================================================
+# Development (current config):
+# - Source code mounted as volume for hot-reload
+# - Debug mode enabled
+# - Running with Django development server
+#
+# Production (recommended changes):
+# - Remove volume mounts
+# - Use gunicorn instead of runserver
+# - Enable security settings
+# - Use separate docker-compose.prod.yml
+# =============================================================================
