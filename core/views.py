@@ -22,6 +22,7 @@ from django.db import connection
 from redis import Redis
 from openai import OpenAI
 import os
+import time
 
 import stripe
 import logging
@@ -38,8 +39,53 @@ if not FRONTEND_URL.startswith(('http://', 'https://')):
         FRONTEND_URL = f'https://{FRONTEND_URL}'
         
 class CustomUserDetailsView(UserDetailsView):
+    """Enhanced user details view with caching"""
     serializer_class = CustomUserDetailsSerializer
     permission_classes = [IsAuthenticated]
+    
+    def get(self, request, *args, **kwargs):
+        """Get user details with caching"""
+        cache_key = f'user_profile_{request.user.id}'
+        
+        # Try cache first
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            logger.debug(f"📦 Returning cached user profile for user {request.user.id}")
+            return Response(cached_data)
+        
+        # Get fresh data
+        response = super().get(request, *args, **kwargs)
+        
+        if response.status_code == 200:
+            # Cache successful responses for 15 minutes
+            cache.set(cache_key, response.data, timeout=60 * 15)
+            logger.info(f"💾 Cached user profile for user {request.user.id}")
+        
+        return response
+
+    def patch(self, request, *args, **kwargs):
+        """Update user details and invalidate cache"""
+        response = super().patch(request, *args, **kwargs)
+        
+        if response.status_code == 200:
+            # Invalidate cache after successful update
+            cache_key = f'user_profile_{request.user.id}'
+            cache.delete(cache_key)
+            logger.info(f"🗑️ Invalidated user profile cache for user {request.user.id}")
+        
+        return response
+
+    def put(self, request, *args, **kwargs):
+        """Update user details and invalidate cache"""
+        response = super().put(request, *args, **kwargs)
+        
+        if response.status_code == 200:
+            # Invalidate cache after successful update
+            cache_key = f'user_profile_{request.user.id}'
+            cache.delete(cache_key)
+            logger.info(f"🗑️ Invalidated user profile cache for user {request.user.id}")
+        
+        return response
 
 class GoogleLogin(SocialLoginView):
     adapter_class = GoogleOAuth2Adapter
@@ -288,6 +334,29 @@ class PlanListView(ListAPIView):
             logger.debug(f"Filtered to {queryset.count()} yearly plans")
 
         return queryset    
+
+    def list(self, request, *args, **kwargs):
+        """Enhanced list method with intelligent caching"""
+        billing = request.query_params.get('billing', 'all')
+        user_id = request.user.id if request.user.is_authenticated else 'anonymous'
+        
+        # Create cache key that includes billing filter and user context
+        cache_key = f'plans_list_{billing}_{user_id}'
+        
+        # Try to get cached response
+        cached_response = cache.get(cache_key)
+        if cached_response:
+            logger.debug(f"📦 Returning cached plans list for billing={billing}, user={user_id}")
+            return Response(cached_response)
+        
+        # Get fresh data
+        response = super().list(request, *args, **kwargs)
+        
+        # Cache the response data for 24 hours
+        cache.set(cache_key, response.data, timeout=60 * 60 * 24)
+        logger.info(f"💾 Cached plans list for billing={billing}, user={user_id}")
+        
+        return response
     
 class CreateBillingPortalSessionView(APIView):
     permission_classes = [IsAuthenticated]
@@ -488,7 +557,16 @@ class HealthCheckView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        logger.debug(" Health check initiated")
+        """Health check with caching to reduce load on services"""
+        cache_key = 'health_check_status'
+        
+        # Try cache first (30-second TTL)
+        cached_status = cache.get(cache_key)
+        if cached_status:
+            logger.debug("📦 Returning cached health check status")
+            return Response(cached_status['data'], status=cached_status['http_status'])
+        
+        logger.debug("🔍 Health check initiated")
         services = {}
 
         # Check DB
@@ -530,10 +608,20 @@ class HealthCheckView(APIView):
         overall = 'healthy' if services['db'] == 'healthy' and services['redis'] == 'healthy' else 'unhealthy'
         http_status = status.HTTP_200_OK if overall == 'healthy' else status.HTTP_503_SERVICE_UNAVAILABLE
 
-        return Response({
+        response_data = {
             'overall': overall,
             'services': services
-        }, status=http_status)
+        }
+        
+        # Cache the result for 30 seconds
+        cache_data = {
+            'data': response_data,
+            'http_status': http_status
+        }
+        cache.set(cache_key, cache_data, timeout=30)
+        logger.info(f"💾 Cached health check status: {overall}")
+
+        return Response(response_data, status=http_status)
 
 
 @extend_schema(
@@ -697,11 +785,23 @@ class RateLimitStatusView(APIView):
     """
     Get detailed rate limit status for the authenticated user.
     Shows current usage, remaining quota, and upgrade recommendations.
+    Enhanced with intelligent caching.
     """
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
         user = request.user
+        
+        # Create time-based cache key (changes every minute)
+        current_minute = int(time.time() / 60)
+        cache_key = f'rate_limit_status_{user.id}_{current_minute}'
+        
+        # Try cache first
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            logger.debug(f"📦 Returning cached rate limit status for user {user.id}")
+            return Response(cached_data)
+        
         logger.info(f"📊 Rate limit status requested - User: {user.email}")
         
         scopes = ['ai_responses', 'questionnaires', 'api_calls']
@@ -742,6 +842,10 @@ class RateLimitStatusView(APIView):
             'rate_limits': rate_limits,
             'upgrade_recommendation': upgrade_recommendation
         }
+        
+        # Cache for 1 minute (balances freshness with performance)
+        cache.set(cache_key, response_data, timeout=60)
+        logger.info(f"💾 Cached rate limit status for user {user.id}")
         
         logger.info(
             f"✅ Rate limit status returned - User: {user.email}, "

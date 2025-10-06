@@ -290,14 +290,31 @@ CELERY_TIMEZONE = 'UTC'
 
 CACHE_URL = os.getenv('CACHE_URL', 'redis://127.0.0.1:6379/1')
 
+# Enhanced cache configuration
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
         "LOCATION": CACHE_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        }
+            "PARSER_CLASS": "redis.connection.HiredisParser",
+            "CONNECTION_POOL_CLASS_KWARGS": {
+                "max_connections": 50,
+                "retry_on_timeout": True,
+            }
+        },
+        "KEY_PREFIX": "cvimprover",
+        "TIMEOUT": 300,  # Default 5 minutes
     }
+}
+
+# Cache timeouts for different data types
+CACHE_TIMEOUTS = {
+    'plans': 60 * 60 * 24,      # 24 hours - plans change rarely
+    'user_profile': 60 * 15,    # 15 minutes - user data changes occasionally  
+    'rate_limits': 60,          # 1 minute - rate limits need frequent updates
+    'health_check': 30,         # 30 seconds - quick health status updates
+    'questionnaires': 60 * 5,   # 5 minutes - questionnaire data changes occasionally
 }
 
 LOGGING_DIR = os.path.join(BASE_DIR, 'logs')
