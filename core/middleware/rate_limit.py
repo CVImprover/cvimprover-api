@@ -25,7 +25,7 @@ class RateLimitMiddleware:
     
     def __call__(self, request):
         # Skip rate limiting for certain paths
-        exempt_paths = ['/admin/', '/static/', '/media/', '/health/']
+        exempt_paths = ['/admin/', '/static/', '/media/', '/health/', '/core/health/']
         if any(request.path.startswith(path) for path in exempt_paths):
             return self.get_response(request)
         

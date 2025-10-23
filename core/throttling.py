@@ -110,7 +110,7 @@ class PlanBasedThrottle(UserRateThrottle):
             'message': 'Too many requests. Please try again later.',
             'upgrade_suggestion': {
                 'recommended_plan': recommended_plan,
-                'upgrade_url': '/plans/'
+                'upgrade_url': '/core/plans/'
             } if recommended_plan else None
         })
 
@@ -261,10 +261,9 @@ def get_rate_limit_status(user, scope='ai_responses'):
     cache_key = throttle.get_cache_key(mock_request, None)
     history = cache.get(cache_key, [])
     
-    # Filter to requests within the current window
+    # Filter to requests within the current window (oldest entries removed)
     now = throttle.timer()
-    while history and history[-1] <= now - duration:
-        history.pop()
+    history = [t for t in history if t > now - duration]
     
     used = len(history)
     remaining = max(0, num_requests - used)
